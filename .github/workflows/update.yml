@@ -1,0 +1,37 @@
+name: 재고 메일 가져오기 + 대시보드 갱신
+on:
+  schedule:
+    - cron: "40 0 * * *"     # 매일 09:40 (한국시간) — SCM 전일 마감 재고 메일(09:30경 도착)
+  push:
+    paths: ["inputs/**.enc", "master.csv", "build.py"]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: dashboard, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install openpyxl cryptography
+      - name: 네이버 메일에서 재고 엑셀 받기
+        if: github.event_name != 'push'
+        env: { NAVER_ID: "${{ secrets.NAVER_ID }}", NAVER_PW: "${{ secrets.NAVER_PW }}", DASH_PW: "${{ secrets.DASH_PW }}" }
+        run: |
+          python3 fetch_stock.py --out /tmp/stock.xlsx
+          python3 vault.py enc /tmp/stock.xlsx inputs/stock.xlsx.enc
+          cp /tmp/stock.xlsx.label inputs/stock.label
+      - name: 대시보드 데이터 만들기
+        env: { DASH_PW: "${{ secrets.DASH_PW }}" }
+        run: |
+          test -f inputs/orders.json.enc || { echo "발주 파일 아직 없음"; exit 0; }
+          python3 vault.py dec inputs/orders.json.enc /tmp/orders.json
+          python3 vault.py dec inputs/stock.xlsx.enc /tmp/stock.xlsx
+          python3 build.py --orders /tmp/orders.json --stock /tmp/stock.xlsx --stock-label "$(cat inputs/stock.label 2>/dev/null)" --out .
+      - name: 저장
+        run: |
+          git config user.name "aky-bot"; git config user.email "bot@users.noreply.github.com"
+          git add -A data.enc meta.json inputs || true
+          git diff --cached --quiet || { git commit -m "자동 갱신 $(TZ=Asia/Seoul date '+%m-%d %H:%M')"; git push; }
