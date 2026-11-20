@@ -33,5 +33,5 @@ jobs:
       - name: 저장
         run: |
           git config user.name "aky-bot"; git config user.email "bot@users.noreply.github.com"
-          git add -A data.enc meta.json inputs || true
+          git add -A data.enc meta.json inputs archive || true
           git diff --cached --quiet || { git commit -m "자동 갱신 $(TZ=Asia/Seoul date '+%m-%d %H:%M')"; git push; }

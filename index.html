@@ -54,6 +54,7 @@ section.page{padding:4px 16px 20px;animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 .eyebrow{font-size:12.5px;font-weight:700;color:var(--gold);letter-spacing:.08em}
+.dsel{appearance:none;-webkit-appearance:none;border:1.5px solid var(--line);background:var(--card) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%278%27%3E%3Cpath d=%27M1 1l5 5 5-5%27 stroke=%27%23B98B3E%27 stroke-width=%272%27 fill=%27none%27/%3E%3C/svg%3E") no-repeat right 12px center;color:var(--gold);font:inherit;font-size:14px;font-weight:700;letter-spacing:.04em;padding:7px 34px 7px 13px;border-radius:99px;outline:none}
 .title{font-family:var(--serif);font-size:26px;margin:6px 0 2px;font-weight:700}
 .muted{color:var(--muted)} .sub{color:var(--sub)}
 .row{display:flex;align-items:center;gap:10px} .sp{flex:1}
@@ -172,11 +173,27 @@ async function deriveKey(pw){
   return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(META.salt),iterations:META.iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
 }
 const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+let SEL=null;
+async function fetchDec(path){
+  const u=new Uint8Array(await (await fetch(path,{cache:'no-store'})).arrayBuffer());
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},KEY,u.slice(12))));
+}
 async function load(pw){
   META=await (await fetch('meta.json',{cache:'no-store'})).json();
   KEY=await deriveKey(pw);
-  const u=new Uint8Array(await (await fetch('data.enc',{cache:'no-store'})).arrayBuffer());
-  D=JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:u.slice(0,12)},KEY,u.slice(12))));
+  D=await fetchDec('data.enc');
+  if(SEL&&SEL!==D.delivery&&(META.dates||[]).includes(SEL)){try{D=await fetchDec(`archive/${SEL}.enc`)}catch(e){}}
+  SEL=D.delivery;
+}
+async function pickDate(d){
+  try{D=d===META.current?await fetchDec('data.enc'):await fetchDec(`archive/${d}.enc`);SEL=d;start(true);toast(`${md(d)} 납품분을 보여드려요`);}
+  catch(e){toast('그 날짜 기록을 열지 못했어요');}
+}
+function eyebrow(){
+  const ds=(META.dates&&META.dates.length?META.dates:[D.delivery]).slice().reverse();
+  const today=new Date();today.setHours(0,0,0,0);
+  const past=D.delivery&&pd(D.delivery)<today;
+  return `<div class="row" style="gap:8px"><select class="dsel" onchange="pickDate(this.value)">${ds.map(d=>`<option value="${d}" ${d===D.delivery?'selected':''}>${md(d)} 납품분${d===META.current?' · 현재':''}</option>`).join('')}</select>${past?'<span class="pill gray">지난 기록</span>':''}</div>`;
 }
 async function unlock(pw,silent){
   const btn=$('#lockBtn'),err=$('#lockErr');
@@ -210,7 +227,7 @@ const needList=()=>D.items.filter(i=>i.status!=='stop'&&(i.short>0||i.status==='
 
 /* ---------- 시작 ---------- */
 let TAB='home',FILTER='all',Q='';
-function start(){
+function start(switching){
   $('#lock').classList.add('hide');$('#app').classList.remove('hide');
   $('#updated').innerHTML=`업데이트<br>${esc(D.built.slice(5).replace('-','.'))}`;
   const nb=needList().length;$('#needBadge').textContent=nb;$('#needBadge').classList.toggle('hide',!nb);
@@ -218,7 +235,7 @@ function start(){
   render();
   // 처음 보거나 데이터가 바뀌었으면 팝업
   const sig=D.history.length?D.history[D.history.length-1].sig:D.built;
-  if(store.get('aky_seen')!==sig){
+  if(!switching&&D.delivery===META.current&&store.get('aky_seen')!==sig){
     store.set('aky_seen',sig);
     const sh=D.items.filter(i=>i.short>0&&i.status!=='stop'),ct=sh.reduce((a,i)=>a+i.cartons,0);
     if(sh.length) modal(`<div class="stampbig">발주</div><h2>${sh.length}품목 부족해요</h2><p>${md(D.delivery)} 납품분 기준, 총 <b>${n(ct)}카톤</b>을 브랜드에 긴급 발주해야 해요.${cb?`<br>지난번보다 변동 ${cb}건이 있어요.`:''}</p><button class="btn red" onclick="closeAll();go('need')">발주 필요 목록 보기</button><button class="btn ghost" style="margin-top:8px" onclick="closeAll()">닫기</button>`);
@@ -243,7 +260,7 @@ function home(){
   const brands=byBrand(sh);
   const last=D.history[D.history.length-1];
   return `
-  <div class="eyebrow">${md(D.delivery)} 납품분</div>
+  ${eyebrow()}
   <div class="title">${sh.length?'긴급 발주가 필요해요':'모두 납품 가능해요'}</div>
   <div class="sub" style="font-size:14px">재고 기준: ${esc(D.stockLabel)}</div>
   <div class="card hero ${sh.length?'alert':''}">
@@ -290,7 +307,7 @@ function row(i){
 /* ---------- 발주필요 ---------- */
 function need(){
   const list=needList(),brands=byBrand(list);
-  return `<div class="eyebrow">${md(D.delivery)} 납품분</div><div class="title">발주 필요 ${list.length}품목</div>
+  return `${eyebrow()}<div class="title">발주 필요 ${list.length}품목</div>
   ${brands.map(b=>`<div class="card"><h3>${esc(b.brand)} <span class="pill due">${n(b.cartons)}카톤</span></h3>
     ${b.items.map(row).join('')}
     <button class="btn red" style="margin-top:12px" data-brand="${esc(b.brand)}">${esc(b.brand)}에 이거 시켜야해요</button></div>`).join('')}
@@ -305,7 +322,7 @@ function all(){
   let l=D.items.filter(i=>!q||i.name.toLowerCase().includes(q)||i.code.includes(q)||i.brand.toLowerCase().includes(q));
   const f={all:()=>true,short:i=>i.short>0||i.status==='nostock',tight:i=>i.status==='tight',ok:i=>i.status==='ok',iss:i=>i.issues.some(x=>x.lv!=='note'),on:i=>i.online>0,off:i=>i.offline>0}[FILTER];
   l=l.filter(f);
-  return `<div class="eyebrow">${md(D.delivery)} 납품분</div><div class="title">전체 ${D.items.length}품목</div>
+  return `${eyebrow()}<div class="title">전체 ${D.items.length}품목</div>
   <input class="search" id="q" placeholder="상품명·코드·브랜드 검색" value="${esc(Q)}">
   <div class="seg">${Object.entries(FL).map(([k,v])=>`<button data-f="${k}" class="${FILTER===k?'on':''}">${v}</button>`).join('')}</div>
   <div class="card">${l.length?l.map(row).join(''):'<div class="empty">조건에 맞는 품목이 없어요</div>'}</div>`;
@@ -314,7 +331,7 @@ function all(){
 /* ---------- 변동 ---------- */
 function chg(){
   const c=D.items.filter(i=>i.change);
-  return `<div class="eyebrow">${md(D.delivery)} 납품분</div><div class="title">발주 변동</div>
+  return `${eyebrow()}<div class="title">발주 변동</div>
   <div class="card"><h3>이번 확인에서 바뀐 것 <span class="pill lun">${c.length+D.removed.length}</span></h3>
     ${c.length||D.removed.length?c.map(i=>`<button class="it" data-code="${i.code}"><div class="row"><span class="pill ${i.change==='new'?'pre':'gold'}">${i.change==='new'?'신규':'수량'}</span><div class="sp nm">${esc(i.name)}</div></div><div class="meta">${i.change==='new'?`새 발주 ${n(i.total)}개`:`${n(i.prevTotal)} → ${n(i.total)}개`} ${i.short?`· <b style="color:var(--stamp)">부족 ${n(i.cartons)}카톤</b>`:''}</div></button>`).join('')+D.removed.map(r=>`<div class="chg"><span class="pill gray">삭제</span><span class="sp">${esc(r.name||r.code)} (${n(r.prevTotal)}개)</span></div>`).join(''):'<div class="empty">지난번 확인과 달라진 게 없어요</div>'}
   </div>

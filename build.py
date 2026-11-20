@@ -308,17 +308,17 @@ def analyze(lines, stock, master, prev):
                 seen.add((exp, lot["qty"]))
                 remain = (exp - delivery).days
                 mfg_calc = exp - dt.timedelta(days=days - 1)
-                ok = remain > days / frac
                 future = mfg_calc > delivery
+                ok = remain > days / frac and not future
                 ban = exp - dt.timedelta(days=days // 2)
                 lots.append({"exp": exp.isoformat(), "qty": lot["qty"], "remain": remain, "pct": round(remain / days * 100),
                              "ok": ok, "future": future, "half": remain <= days / 2})
                 if lot["qty"] is not None and ok:
                     eligible += lot["qty"]
-                if not ok:
+                if future:
+                    issues.append({"lv": "bad", "t": f"유통기한 {exp:%y.%m.%d} → 계산 제조일 {mfg_calc:%y.%m.%d}가 납품일보다 미래라 납품 불가 (임의 입력·수기수정 시 회송됨)"})
+                elif not ok:
                     issues.append({"lv": "bad", "t": f"유통기한 {exp:%y.%m.%d} 잔여 {remain}일({round(remain/days*100)}%) — 1/{frac} 이하라 납품 불가"})
-                elif future:
-                    issues.append({"lv": "warn", "t": f"유통기한 {exp:%y.%m.%d} → 계산 제조일 {mfg_calc:%y.%m.%d}가 납품일보다 미래. 전산 최대값 입력 후 수기수정 요청"})
                 elif remain <= days / 2:
                     issues.append({"lv": "note", "t": f"유통기한 {exp:%y.%m.%d} 잔여 {round(remain/days*100)}% — 사내 입고금지일({ban:%y.%m.%d}) 지남"})
             # 선입선출로 발주수량을 채우는 데 필요한 유통기한 종류 수
@@ -466,11 +466,11 @@ def encrypt(pw, salt, data: bytes):
     return iv + AESGCM(kdf(pw, salt)).encrypt(iv, data, None)
 
 
-def decrypt_prev(pw, outdir):
+def decrypt_prev(pw, outdir, name="data.enc"):
     try:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
         meta = json.load(open(os.path.join(outdir, "meta.json")))
-        buf = open(os.path.join(outdir, "data.enc"), "rb").read()
+        buf = open(os.path.join(outdir, name), "rb").read()
         key = kdf(pw, base64.b64decode(meta["salt"]))
         return json.loads(AESGCM(key).decrypt(buf[:12], buf[12:], None))
     except Exception:
@@ -494,10 +494,17 @@ def main():
     stock, smeta = read_stock(a.stock) if a.stock else ({}, {"rows": 0})
     master = read_master(a.master)
 
-    old = decrypt_prev(pw, a.out)
+    ds = [l["date"] for l in lines if l["date"]]
+    delivery_guess = max(set(ds), key=ds.count) if ds else None
+    dkey = delivery_guess.isoformat() if delivery_guess else None
+    today = dt.datetime.now(KST).date()
+    arch_name = f"archive/{dkey}.enc" if dkey else None
+    if delivery_guess and delivery_guess < today and arch_name and os.path.exists(os.path.join(a.out, arch_name)):
+        print(f"납품일 {dkey}은 지난 날짜라 기록을 고정해 둬요 (덮어쓰지 않음).")
+        return
+    old = decrypt_prev(pw, a.out, arch_name) if arch_name and os.path.exists(os.path.join(a.out, arch_name)) else decrypt_prev(pw, a.out)
     prev = None
-    delivery_guess = max((l["date"] for l in lines if l["date"]), default=None)
-    if old and old.get("delivery") == (delivery_guess.isoformat() if delivery_guess else None):
+    if old and old.get("delivery") == dkey:
         prev = {i["code"]: i["total"] for i in old["items"]}
         prev_names.update({i["code"]: i["name"] for i in old["items"]})
     delivery, items, removed = analyze(lines, stock, master, prev)
@@ -531,8 +538,17 @@ def main():
         except Exception:
             pass
     salt = salt or os.urandom(16)
-    open(os.path.join(a.out, "data.enc"), "wb").write(encrypt(pw, salt, raw))
-    json.dump({"salt": base64.b64encode(salt).decode(), "iter": ITER, "built": data["built"]},
+    enc = encrypt(pw, salt, raw)
+    if data["delivery"]:
+        os.makedirs(os.path.join(a.out, "archive"), exist_ok=True)
+        open(os.path.join(a.out, f"archive/{data['delivery']}.enc"), "wb").write(enc)
+    # 대시보드 첫 화면 = 오늘 이후 가장 가까운 납품일 (없으면 방금 만든 것)
+    dates = sorted(f[:-4] for f in os.listdir(os.path.join(a.out, "archive")) if f.endswith(".enc")) if os.path.isdir(os.path.join(a.out, "archive")) else []
+    upcoming = [d for d in dates if d >= today.isoformat()]
+    current = data["delivery"] if (not upcoming or data["delivery"] == upcoming[0]) else upcoming[0]
+    if current == data["delivery"]:
+        open(os.path.join(a.out, "data.enc"), "wb").write(enc)
+    json.dump({"salt": base64.b64encode(salt).decode(), "iter": ITER, "built": data["built"], "current": current, "dates": dates},
               open(meta_path, "w"), ensure_ascii=False)
 
     s = defaultdict(int)
