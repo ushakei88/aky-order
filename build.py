@@ -380,6 +380,8 @@ def analyze(lines, stock, master, prev):
             "status": status, "change": change, "prevTotal": p,
         })
 
+    apply_bundles(items, stock, master)
+
     order = {"short": 0, "nostock": 1, "bad": 2, "tight": 3, "ok": 4, "stop": 5}
     items.sort(key=lambda x: (order[x["status"]], -x["short"], x["brand"], x["name"]))
 
@@ -389,6 +391,63 @@ def analyze(lines, stock, master, prev):
             if code not in by:
                 removed.append({"code": code, "prevTotal": ea, "name": (prev_names or {}).get(code, "")})
     return delivery, items, removed
+
+
+BUNDLE_BRANDS = ("청담소녀",)
+
+
+def base_key(name):
+    n = re.sub(r"\*\s*\d+", "", name or "")
+    n = re.sub(r"\((온|역|오프)\)", "", n)
+    return re.sub(r"\s", "", n)
+
+
+def apply_bundles(items, stock, master):
+    """번들(예: 청담소녀 …*3)은 단품 × N 으로 환산해서 단품 재고와 함께 계산"""
+    names = {}
+    for code, st in stock.items():
+        names.setdefault(base_key(st.get("name")), code)
+    for code, r in master.items():
+        if "*" not in (r.get("상품명") or ""):
+            names.setdefault(base_key(r.get("상품명")), code)
+    for it in items:
+        if "*" not in it["name"]:
+            names.setdefault(base_key(it["name"]), it["code"])
+    groups = OrderedDict()
+    for it in items:
+        it["mult"], it["base"] = 1, it["code"]
+        if any(b in it["name"] for b in BUNDLE_BRANDS):
+            m = re.search(r"\*\s*(\d+)", it["name"])
+            if m:
+                base = names.get(base_key(it["name"]))
+                if base:
+                    it["mult"], it["base"] = int(m.group(1)), base
+        groups.setdefault(it["base"], []).append(it)
+    for base, mem in groups.items():
+        if len(mem) == 1 and mem[0]["mult"] == 1:
+            continue
+        bst = stock.get(base, {})
+        avail = int(bst.get("qty", 0)) + sum(int(stock.get(m["code"], {}).get("qty", 0)) * m["mult"] for m in mem if m["code"] != base)
+        demand = sum(m["total"] * m["mult"] for m in mem)
+        after = avail - demand
+        short = max(0, -after)
+        single = next((m for m in mem if m["code"] == base), None)
+        bname = (single or {}).get("name") or bst.get("name") or (master.get(base) or {}).get("상품명") or base
+        unit = int(to_num((master.get(base) or {}).get("입수량")) or (single or {}).get("unit") or bst.get("unit") or 1)
+        detail = " + ".join(f"{m['name'].split()[-1] if m['mult']>1 else '단품'} {m['total']}×{m['mult']}" for m in mem)
+        rep = single or mem[0]
+        for m in mem:
+            m["after"] = after if m is rep else 0
+            m["short"] = m["cartons"] = m["orderEA"] = 0
+            m["poolNote"] = f"단품 기준 계산: 필요 {demand:,}개 ({detail}) · 단품 재고 {avail:,}개"
+            m["issues"].insert(0, {"lv": "note", "t": m["poolNote"] + ("" if m is rep else f" → 발주는 '{bname}'에 합산")})
+            if m["status"] != "stop":
+                m["status"] = "short" if short else ("tight" if after < unit else "ok")
+        rep["short"] = short
+        rep["cartons"] = math.ceil(short / unit) if short else 0
+        rep["orderEA"] = rep["cartons"] * unit
+        rep["unit"] = unit
+        rep["orderName"], rep["orderCode"] = bname, base
 
 
 prev_names = {}
