@@ -10,13 +10,13 @@
 ## 2. 올리브원에서 발주 가져오기 (회사 PC의 Claude 앱 내장 브라우저, mcp__remote-devices__Claude_Browser__* 도구)
 1. tabs_context로 열린 탭을 보고, https://oypartner.cj.net/CJOYP/nexacro/main.fo 로 이동한다.
 2. 로그인 화면이면 **입력하지 말고 멈춘다.** PushNotification(또는 SendUserMessage)으로 "올리브원 로그인이 풀려 있어요. 회사 PC Claude 앱 브라우저에서 로그인해 주세요"라고 알리고 종료한다.
-3. 왼쪽 메뉴 검색칸(좌표 약 80,152)에 `납품확인서` 입력 → 아래 화살표 → Enter 로 "[80120]납품확인서(R1)"을 연다. 왼쪽 메뉴는 `<` 버튼(약 218,152)으로 접는다.
-4. 화면 아래 가로 스크롤바를 왼쪽 끝으로 끌어 납품일자 칸을 보이게 하고, 시작·종료 납품일자 둘 다 납품일(YYYYMMDD)로 바꾼다(칸 클릭 → ctrl+a → 입력).
-5. 스크롤바를 오른쪽 끝으로 끌고 [조회](약 742,189)를 누른다. 3초 기다린다.
+3. (좌표는 스크린샷 800x450 기준) 왼쪽 메뉴 검색칸(약 42,84)에 `납품확인서` 입력 → 아래 화살표 → Enter 로 "[80120]납품확인서(R1)"을 연다. 왼쪽 메뉴는 접지 않아도 된다(납품일자 칸이 이미 보임).
+4. 시작(약 225,127)·종료(약 310,127) 납품일자 둘 다 납품일(YYYYMMDD)로 바꾼다(칸 클릭 → ctrl+a → 입력).
+5. 오른쪽 위 [조회](약 770,104)를 누른다. 화면이 다르면 스크린샷으로 위치를 다시 찾는다. 3초 기다린다.
 6. javascript_tool로 데이터셋을 뽑는다:
 ```js
 (() => {
-  const app = nexacro.getApplication(); const seen = new Set(); let f = null;
+  const app = window.application || (nexacro.getApplication && nexacro.getApplication()); const seen = new Set(); let f = null;
   function w(o,d){ if(!o||d>9||seen.has(o)||f) return; seen.add(o);
     try{ if(o.ds_supVeridcLst&&o.ds_supVeridcLst.getRowCount){ f=o.ds_supVeridcLst; return; } }catch(e){}
     const k=[]; try{ if(o.all) for(let i=0;i<o.all.length;i++) k.push(o.all[i]); }catch(e){}
@@ -43,6 +43,6 @@ git add -A && git commit -m "발주 확인 $(TZ=Asia/Seoul date '+%m-%d %H:%M')"
 ```
 3. build.py가 출력한 "변동: 신규 · 수량변경 · 삭제" 줄을 본다.
 
-## 4. 알림
+## 4. 알림 (모든 보고는 한글로 쉽게)
 - 처음 확인이거나 변동(신규/수량변경/삭제)이 1건 이상이면 PushNotification으로 짧게 알린다: "11.24(화) 납품분: 부족 ○품목 ○카톤, 변동 ○건 — https://ushakei88.github.io/aky-order/"
 - 변동이 없으면 알리지 않는다.
