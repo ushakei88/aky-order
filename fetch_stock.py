@@ -50,7 +50,7 @@ def main():
         if fn and fn.lower().endswith((".xlsx", ".xls", ".xlsm")):
             os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
             open(a.out, "wb").write(part.get_payload(decode=True))
-            when = parsedate_to_datetime(best[2]).astimezone().strftime("%m.%d %H:%M") if best[2] else ""
+            when = parsedate_to_datetime(best[2]).astimezone(__import__("datetime").timezone(__import__("datetime").timedelta(hours=9))).strftime("%m.%d %H:%M") if best[2] else ""
             label = f"{best[1]} ({when} 수신)"
             open(a.out + ".label", "w", encoding="utf-8").write(label)
             print("저장:", a.out, "|", label, "|", fn)
