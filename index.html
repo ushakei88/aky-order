@@ -129,6 +129,17 @@ section.page{padding:4px 16px 20px;animation:fade .25s ease}
 #modal h2{font-family:var(--serif);margin:0 0 6px;font-size:22px}
 #modal p{margin:0 0 16px;color:var(--sub);font-size:15px}
 textarea.mail{width:100%;min-height:180px;border:1.5px solid var(--line);border-radius:14px;padding:12px;font:inherit;font-size:14px;background:#FFFBF2;resize:vertical}
+
+.rep{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 14px;font-size:13.5px}
+.rep .hd{border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:10px}
+.rep .hd b{font-family:var(--serif);font-size:19px}
+.rep h4{margin:14px 0 6px;font-size:14px;display:flex;gap:6px;align-items:center}
+.rep table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.rep th{font-size:11.5px;color:var(--sub);font-weight:600;text-align:left;border-bottom:1px solid var(--line);padding:4px 3px}
+.rep td{border-bottom:1px solid #F0EAE0;padding:6px 3px;vertical-align:top;line-height:1.35}
+.rep td.r,.rep th.r{text-align:right;white-space:nowrap}
+.rep .bc{font-size:11px;color:var(--muted)}
+.rep .ft{margin-top:12px;padding-top:8px;border-top:1px dashed var(--line);color:var(--sub);font-size:12.5px}
 #toast{position:fixed;left:50%;bottom:calc(100px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);background:#2A2521;color:#fff;padding:12px 18px;border-radius:14px;font-size:14.5px;opacity:0;transition:.25s;z-index:200;pointer-events:none}
 #toast.on{opacity:1;transform:translateX(-50%)}
 </style>
@@ -221,9 +232,11 @@ const pd=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
 const md=s=>{if(!s)return'-';const d=pd(s);return `${d.getMonth()+1}.${d.getDate()} (${WD[d.getDay()]})`};
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),1800);}
 async function copy(t,msg){try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}toast(msg||'복사했어요');}
-const ST={short:['부족 · 발주필요','due'],nostock:['재고 파일에 없음','due'],bad:['유통기한 불가','due'],tight:['빠듯','amb'],ok:['충분','ok'],stop:['미납 처리','gray']};
-const COLOR={short:'#C8402F',nostock:'#E08A7C',bad:'#7A4E86',tight:'#B7791F',ok:'#2F5D50',stop:'#B9AFA2'};
-const needList=()=>D.items.filter(i=>i.status!=='stop'&&(i.short>0||i.status==='bad'));
+const ST={short:['발주필요','due'],nostock:['재고 파일에 없음','due'],bad:['유통기한 불가','due'],pre:['미리 발주','amb'],tight:['미리 발주','amb'],ok:['충분','ok'],stop:['미납 처리','gray'],end:['발주종료','gray']};
+const ORD=i=>i.cartons>0&&!['stop','end'].includes(i.status);
+const STS=['short','nostock','bad','pre','ok','stop','end'];
+const COLOR={short:'#C8402F',nostock:'#E08A7C',bad:'#7A4E86',pre:'#B7791F',tight:'#B7791F',ok:'#2F5D50',stop:'#B9AFA2',end:'#9C9285'};
+const needList=()=>D.items.filter(i=>ORD(i)||i.status==='bad');
 
 /* ---------- 시작 ---------- */
 let TAB='home',FILTER='all',Q='';
@@ -237,8 +250,8 @@ function start(switching){
   const sig=D.history.length?D.history[D.history.length-1].sig:D.built;
   if(!switching&&D.delivery===META.current&&store.get('aky_seen')!==sig){
     store.set('aky_seen',sig);
-    const sh=D.items.filter(i=>i.short>0&&i.status!=='stop'),ct=sh.reduce((a,i)=>a+i.cartons,0);
-    if(sh.length) modal(`<div class="stampbig">발주</div><h2>${sh.length}품목 부족해요</h2><p>${md(D.delivery)} 납품분 기준, 총 <b>${n(ct)}카톤</b>을 브랜드에 긴급 발주해야 해요.${cb?`<br>지난번보다 변동 ${cb}건이 있어요.`:''}</p><button class="btn red" onclick="closeAll();go('need')">발주 필요 목록 보기</button><button class="btn ghost" style="margin-top:8px" onclick="closeAll()">닫기</button>`);
+    const sh=D.items.filter(ORD),ct=sh.reduce((a,i)=>a+i.cartons,0);
+    if(sh.length) modal(`<div class="stampbig">발주</div><h2>${sh.length}품목 발주해야 해요</h2><p>${md(D.delivery)} 납품분 기준, 총 <b>${n(ct)}카톤</b>을 브랜드에 발주해야 해요(부족 ${sh.filter(i=>i.status!=='pre').length} · 미리 ${sh.filter(i=>i.status==='pre').length}).${cb?`<br>지난번보다 변동 ${cb}건이 있어요.`:''}</p><button class="btn red" onclick="closeAll();go('need')">발주 필요 목록 보기</button><button class="btn ghost" style="margin-top:8px" onclick="closeAll()">닫기</button>`);
   }
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>go(b.dataset.tab));
@@ -253,10 +266,10 @@ function bind(){
 
 /* ---------- 홈 ---------- */
 function home(){
-  const it=D.items,sh=it.filter(i=>i.short>0&&i.status!=='stop'),ct=sh.reduce((a,i)=>a+i.cartons,0);
+  const it=D.items,sh=it.filter(ORD),ct=sh.reduce((a,i)=>a+i.cartons,0);
   const on=it.reduce((a,i)=>a+i.online,0),off=it.reduce((a,i)=>a+i.offline,0),tot=it.reduce((a,i)=>a+i.total,0);
   const cnt=k=>it.filter(i=>i.status===k).length;
-  const iss=it.filter(i=>i.issues.some(x=>x.lv!=='note'));
+  const iss=it.filter(i=>!['stop','end'].includes(i.status)&&i.issues.some(x=>x.lv!=='note'));
   const brands=byBrand(sh);
   const last=D.history[D.history.length-1];
   return `
@@ -265,14 +278,15 @@ function home(){
   <div class="sub" style="font-size:14px">재고 기준: ${esc(D.stockLabel)}</div>
   <div class="card hero ${sh.length?'alert':''}">
     <div class="wm">${sh.length?'발주':'OK'}</div>
-    <div style="font-size:13.5px;opacity:.85">${sh.length?'부족 품목 · 발주할 카톤':'부족 품목'}</div>
+    <div style="font-size:13.5px;opacity:.85">${sh.length?`발주할 품목 · 카톤 (부족 ${sh.filter(i=>i.status!=='pre').length} · 미리 ${sh.filter(i=>i.status==='pre').length})`:'발주할 품목'}</div>
     <div class="big num">${sh.length}<small>품목</small>${sh.length?` · ${n(ct)}<small>카톤</small>`:''}</div>
     <div class="stats"><div>발주 SKU<b>${it.length}개</b></div><div>오프라인<b>${n(off)}</b></div><div>온라인<b>${n(on)}</b></div></div>
   </div>
+  <button class="card dashed" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left" onclick="report()"><span class="av" style="background:#F6EBD5;color:#8A6420">3PL</span><span class="sp"><b>3PL 실재고 확인 요청서</b><br><span class="sub" style="font-size:13.5px">부족·유통기한·번들 작업을 한 장으로 정리해요</span></span><span style="color:var(--gold);font-weight:700">열기 ›</span></button>
   <div class="card">
     <h3>재고 매칭 결과 <span class="muted" style="font-size:13px;font-weight:500">총 ${n(tot)}개</span></h3>
-    <div class="progress">${['short','nostock','bad','tight','ok','stop'].map(k=>`<i style="width:${cnt(k)/it.length*100}%;background:${COLOR[k]}"></i>`).join('')}</div>
-    <div class="legend">${['short','nostock','bad','tight','ok','stop'].filter(k=>cnt(k)).map(k=>`<span style="--c:${COLOR[k]}">${ST[k][0]} ${cnt(k)}</span>`).join('')}</div>
+    <div class="progress">${STS.map(k=>`<i style="width:${cnt(k)/it.length*100}%;background:${COLOR[k]}"></i>`).join('')}</div>
+    <div class="legend">${STS.filter(k=>cnt(k)).map(k=>`<span style="--c:${COLOR[k]}">${ST[k][0]} ${cnt(k)}</span>`).join('')}</div>
   </div>
   ${brands.length?`<div class="card"><h3>브랜드별 발주 <span class="more" onclick="go('need')">자세히 ›</span></h3>
     ${brands.map(b=>`<div class="brandrow"><div class="av">${esc(b.brand[0]||'?')}</div><div class="sp"><b>${esc(b.brand)}</b><div class="muted" style="font-size:13px">${b.items.length}품목 · ${n(b.cartons)}카톤 (${n(b.ea)}개)</div></div><button class="btn small red" data-brand="${esc(b.brand)}">시켜야해요</button></div>`).join('')}
@@ -285,20 +299,20 @@ function home(){
   <div class="note">발주는 화요일(→목 납품)·금요일(→다음 주 화 납품)에 떠요. 12:30~14:30엔 수시로, 그 뒤에는 납품 전날까지 정기적으로 다시 확인해서 바뀐 것만 표시해요.</div>`;
 }
 function byBrand(list){
-  const m={};list.filter(i=>i.short>0&&i.status!=='stop').forEach(i=>{(m[i.brand]=m[i.brand]||{brand:i.brand,items:[],cartons:0,ea:0});m[i.brand].items.push(i);m[i.brand].cartons+=i.cartons;m[i.brand].ea+=i.orderEA;});
+  const m={};list.filter(ORD).forEach(i=>{(m[i.brand]=m[i.brand]||{brand:i.brand,items:[],cartons:0,ea:0});m[i.brand].items.push(i);m[i.brand].cartons+=i.cartons;m[i.brand].ea+=i.orderEA;});
   return Object.values(m).sort((a,b)=>b.cartons-a.cartons);
 }
 
 /* ---------- 상품 행 ---------- */
 function row(i){
   const types=[...new Set(i.lines.map(l=>l.type))];
-  return `<button class="it ${i.short?'short':''}" data-code="${i.code}">
+  return `<button class="it ${ORD(i)&&i.status!=='pre'?'short':''}" data-code="${i.code}">
     <div class="row" style="align-items:flex-start"><div class="sp"><div class="nm">${esc(i.name)}</div>
       <div class="meta num">${i.code} · 입수 ${i.unit}</div></div>
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${types.map(t=>`<span class="pill ${t==='온라인'?'pre':'gold'}">${t==='온라인'?'온':'오프'}</span>`).join('')}${i.change?`<span class="pill lun">${i.change==='new'?'신규':'수량변경'}</span>`:''}</div></div>
     <div class="nums"><div>발주<b>${n(i.total)}</b>${n(i.boxes)}박스</div><div>재고<b>${n(i.stock)}</b>${i.usable!==i.stock?`가능 ${n(i.usable)}`:'&nbsp;'}</div>
       <div class="${i.after<0?'neg':'pos'}">납품 후<b>${i.after>0?'+':''}${n(i.after)}</b>&nbsp;</div><div>상태<b style="font-size:13px;color:${COLOR[i.status]}">${ST[i.status][0].split(' ')[0]}</b>&nbsp;</div></div>
-    ${i.short&&i.status!=='stop'?`<div class="ctn"><span class="sp">부족 ${n(i.short)}개 → ${i.orderName&&i.orderCode!==i.code?'단품 ':''}발주</span><b>${n(i.cartons)}카톤</b><span style="font-size:13px;opacity:.85">(${n(i.orderEA)}개)</span></div>`:''}
+    ${ORD(i)?`<div class="ctn" ${i.status==='pre'?'style="background:var(--amber)"':''}><span class="sp">${esc(i.why||'')} → ${i.orderName&&i.orderCode!==i.code?'단품 ':''}발주</span><b>${n(i.cartons)}카톤</b><span style="font-size:13px;opacity:.85">(${n(i.orderEA)}개)</span></div>`:''}
     ${i.memo?`<div class="iss note">전산 메모: ${esc(i.memo)}</div>`:''}
     ${i.issues.map(x=>`<div class="iss ${x.lv}">${esc(x.t)}</div>`).join('')}
   </button>`;
@@ -311,16 +325,16 @@ function need(){
   ${brands.map(b=>`<div class="card"><h3>${esc(b.brand)} <span class="pill due">${n(b.cartons)}카톤</span></h3>
     ${b.items.map(row).join('')}
     <button class="btn red" style="margin-top:12px" data-brand="${esc(b.brand)}">${esc(b.brand)}에 이거 시켜야해요</button></div>`).join('')}
-  ${list.filter(i=>!i.short).length?`<div class="card"><h3>유통기한 때문에 납품 불가</h3>${list.filter(i=>!i.short).map(row).join('')}</div>`:''}
+  ${list.filter(i=>!ORD(i)).length?`<div class="card"><h3>유통기한 때문에 납품 불가</h3>${list.filter(i=>!ORD(i)).map(row).join('')}</div>`:''}
   ${!list.length?'<div class="card"><div class="empty">발주가 필요한 품목이 없어요</div></div>':''}`;
 }
 
 /* ---------- 전체 ---------- */
-const FL={all:'전체',short:'부족',tight:'빠듯',ok:'충분',iss:'유통기한 이슈',on:'온라인',off:'오프라인'};
+const FL={all:'전체',short:'발주필요',tight:'미리 발주',ok:'충분',iss:'유통기한 이슈',on:'온라인',off:'오프라인'};
 function all(){
   const q=Q.trim().toLowerCase();
   let l=D.items.filter(i=>!q||i.name.toLowerCase().includes(q)||i.code.includes(q)||i.brand.toLowerCase().includes(q));
-  const f={all:()=>true,short:i=>i.short>0||i.status==='nostock',tight:i=>i.status==='tight',ok:i=>i.status==='ok',iss:i=>i.issues.some(x=>x.lv!=='note'),on:i=>i.online>0,off:i=>i.offline>0}[FILTER];
+  const f={all:()=>true,short:i=>ORD(i)&&i.status!=='pre',tight:i=>i.status==='pre'||i.status==='tight',ok:i=>i.status==='ok',iss:i=>i.issues.some(x=>x.lv!=='note'),on:i=>i.online>0,off:i=>i.offline>0}[FILTER];
   l=l.filter(f);
   return `${eyebrow()}<div class="title">전체 ${D.items.length}품목</div>
   <input class="search" id="q" placeholder="상품명·코드·브랜드 검색" value="${esc(Q)}">
@@ -333,7 +347,7 @@ function chg(){
   const c=D.items.filter(i=>i.change);
   return `${eyebrow()}<div class="title">발주 변동</div>
   <div class="card"><h3>이번 확인에서 바뀐 것 <span class="pill lun">${c.length+D.removed.length}</span></h3>
-    ${c.length||D.removed.length?c.map(i=>`<button class="it" data-code="${i.code}"><div class="row"><span class="pill ${i.change==='new'?'pre':'gold'}">${i.change==='new'?'신규':'수량'}</span><div class="sp nm">${esc(i.name)}</div></div><div class="meta">${i.change==='new'?`새 발주 ${n(i.total)}개`:`${n(i.prevTotal)} → ${n(i.total)}개`} ${i.short?`· <b style="color:var(--stamp)">부족 ${n(i.cartons)}카톤</b>`:''}</div></button>`).join('')+D.removed.map(r=>`<div class="chg"><span class="pill gray">삭제</span><span class="sp">${esc(r.name||r.code)} (${n(r.prevTotal)}개)</span></div>`).join(''):'<div class="empty">지난번 확인과 달라진 게 없어요</div>'}
+    ${c.length||D.removed.length?c.map(i=>`<button class="it" data-code="${i.code}"><div class="row"><span class="pill ${i.change==='new'?'pre':'gold'}">${i.change==='new'?'신규':'수량'}</span><div class="sp nm">${esc(i.name)}</div></div><div class="meta">${i.change==='new'?`새 발주 ${n(i.total)}개`:`${n(i.prevTotal)} → ${n(i.total)}개`} ${ORD(i)?`· <b style="color:var(--stamp)">${n(i.cartons)}카톤 발주</b>`:''}</div></button>`).join('')+D.removed.map(r=>`<div class="chg"><span class="pill gray">삭제</span><span class="sp">${esc(r.name||r.code)} (${n(r.prevTotal)}개)</span></div>`).join(''):'<div class="empty">지난번 확인과 달라진 게 없어요</div>'}
   </div>
   <div class="card"><h3>확인 기록</h3>
     ${D.history.slice().reverse().map(h=>`<div class="chg"><span class="num muted" style="width:92px">${esc(h.at.slice(5))}</span><span class="sp">${h.sku}품목 · ${n(h.ea)}개</span><span class="muted" style="font-size:13px">+${h.new} / ±${h.qty} / −${h.removed}</span></div>`).join('')}
@@ -351,12 +365,12 @@ function detail(code){
     <div class="kv"><span>현재고 / 납품 가능</span><b class="num">${n(i.stock)} / ${n(i.usable)}</b></div>
     <div class="kv"><span>납품 후 남는 수량</span><b class="num" style="color:${i.after<0?'var(--stamp)':'var(--green)'}">${n(i.after)}</b></div>
     <div class="kv"><span>입수량 · 소비기한</span><b class="num">${i.unit}개/카톤 · ${i.days?i.days+'일':'-'}</b></div>
-    ${i.short?`<div class="kv"><span>발주할 수량</span><b class="num" style="color:var(--stamp)">${n(i.cartons)}카톤 = ${n(i.orderEA)}개</b></div>`:''}
+    ${ORD(i)?`<div class="kv"><span>발주할 수량</span><b class="num" style="color:var(--stamp)">${n(i.cartons)}카톤 = ${n(i.orderEA)}개</b></div>`:''}
   </div>
   ${i.lots.length?`<div class="card" style="margin:0 0 12px"><h3>유통기한별 (납품일 ${md(D.delivery)} 기준)</h3>${i.lots.map(l=>`<div class="kv"><span class="num">${l.exp} ${l.qty!=null?`· ${n(l.qty)}개`:''}</span><span class="pill ${!l.ok?'due':l.future?'amb':l.half?'gray':'ok'}">잔여 ${l.pct}%${!l.ok?' 불가':l.future?' 미래제조':''}</span></div>`).join('')}</div>`:''}
   ${i.issues.map(x=>`<div class="iss ${x.lv}" style="font-size:14px;margin:6px 0;padding:9px 12px;border-radius:12px">${esc(x.t)}</div>`).join('')}
   ${i.memo?`<div class="note" style="margin-top:8px">전산 메모: ${esc(i.memo)}</div>`:''}
-  ${i.short?`<button class="btn red" style="margin-top:14px" data-brand="${esc(i.brand)}">${esc(i.brand)}에 이거 시켜야해요</button>`:''}`);
+  ${ORD(i)?`<button class="btn red" style="margin-top:14px" data-brand="${esc(i.brand)}">${esc(i.brand)}에 이거 시켜야해요</button>`:''}`);
   document.querySelectorAll('#sheet [data-brand]').forEach(e=>e.onclick=()=>orderSheet(e.dataset.brand));
 }
 
@@ -383,8 +397,40 @@ function orderSheet(brand){
   };
 }
 
+/* ---------- 3PL 확인 요청서 ---------- */
+function report(){
+  const it=D.items.filter(i=>!['stop','end'].includes(i.status));
+  const prevDay=(()=>{const d=pd(D.delivery);d.setDate(d.getDate()-1);return `${d.getMonth()+1}.${d.getDate()} (${WD[d.getDay()]})`})();
+  const stockChk=it.filter(i=>ORD(i)||i.status==='nostock');
+  const expChk=it.filter(i=>i.issues.some(x=>x.lv==='bad'||x.lv==='warn'));
+  const bundle=it.filter(i=>i.mult>1);
+  const short=t=>t.replace(/\s*\(임의 입력.*?\)/,'').replace(/^유통기한 /,'');
+  const nm=i=>`${esc(i.name)}<div class="bc">${i.code}</div>`;
+  const html=`<div class="rep" id="repBox">
+   <div class="hd"><b>3PL 실재고 확인 요청</b><div class="sub" style="font-size:12.5px">아케이 · 올리브영 ${md(D.delivery)} 납품분 · 작성 ${esc(D.built.slice(5))}</div></div>
+   ${stockChk.length?`<h4><span class="pill due">${stockChk.length}</span> 재고 부족·소진 예정 — 실재고 확인 부탁드려요</h4>
+   <table><tr><th>상품</th><th class="r">발주</th><th class="r">전산재고</th><th class="r">실재고</th></tr>
+   ${stockChk.map(i=>`<tr><td>${nm(i)}</td><td class="r">${n(i.total)}</td><td class="r">${n(i.stock)}</td><td class="r" style="color:var(--line)">______</td></tr>`).join('')}</table>`:''}
+   ${expChk.length?`<h4><span class="pill lun">${expChk.length}</span> 유통기한 확인 — 실제 유통기한 회신 부탁드려요</h4>
+   <table><tr><th>상품</th><th>전산 확인 내용</th></tr>
+   ${expChk.map(i=>`<tr><td>${nm(i)}</td><td>${i.issues.filter(x=>x.lv!=='note').map(x=>esc(short(x.t))).join('<br>')}</td></tr>`).join('')}</table>`:''}
+   ${bundle.length?`<h4><span class="pill gold">${bundle.length}</span> 번들 작업 요청</h4>
+   <table><tr><th>상품</th><th class="r">세트</th><th class="r">단품 필요</th></tr>
+   ${bundle.map(i=>`<tr><td>${nm(i)}</td><td class="r">${n(i.total)}</td><td class="r">${n(i.total*i.mult)}개 (×${i.mult})</td></tr>`).join('')}</table>`:''}
+   ${!stockChk.length&&!expChk.length&&!bundle.length?'<div class="empty">이번 납품분은 확인할 내용이 없어요</div>':''}
+   <div class="ft">실재고·유통기한(제조일) 확인 후 <b>${prevDay} 17:00까지</b> 회신 부탁드립니다. 유통기한이 2가지 이상 섞인 품목도 알려주세요.</div>
+  </div>`;
+  const txt=[`[3PL 실재고 확인 요청] 아케이 · 올리브영 ${md(D.delivery)} 납품분`,
+    stockChk.length?'\n■ 재고 부족·소진 예정 (실재고 확인)\n'+stockChk.map(i=>`- ${i.name} (${i.code}) 발주 ${i.total} / 전산재고 ${i.stock} → 실재고: `).join('\n'):'',
+    expChk.length?'\n■ 유통기한 확인\n'+expChk.map(i=>`- ${i.name} (${i.code}): `+i.issues.filter(x=>x.lv!=='note').map(x=>short(x.t)).join(' / ')).join('\n'):'',
+    bundle.length?'\n■ 번들 작업\n'+bundle.map(i=>`- ${i.name}: ${i.total}세트 = 단품 ${i.total*i.mult}개`).join('\n'):'',
+    `\n${prevDay} 17:00까지 회신 부탁드립니다.`].filter(Boolean).join('\n');
+  sheet(html+`<div class="row" style="margin-top:12px"><button class="btn ghost" id="repCopy">텍스트로 복사</button><button class="btn" onclick="closeAll()">닫기</button></div><div class="muted" style="font-size:12.5px;text-align:center;margin-top:8px">이 화면을 캡처해서 3PL 담당자에게 보내주세요</div>`,true);
+  $('#repCopy').onclick=()=>copy(txt,'요청서 내용을 복사했어요');
+}
+
 /* ---------- 시트/모달 ---------- */
-function sheet(h){$('#sheetBody').innerHTML=h;$('#sheet').scrollTop=0;$('#sheet').classList.add('on');$('#dim').classList.add('on');}
+function sheet(h,full){$('#sheet').style.maxHeight=full?'100dvh':'';$('#sheetBody').innerHTML=h;$('#sheet').scrollTop=0;$('#sheet').classList.add('on');$('#dim').classList.add('on');}
 function modal(h){$('#modal').innerHTML=h;$('#modal').classList.add('on');$('#dim').classList.add('on');}
 function closeAll(){$('#sheet').classList.remove('on');$('#modal').classList.remove('on');$('#dim').classList.remove('on');}
 $('#dim').onclick=closeAll;

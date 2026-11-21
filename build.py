@@ -346,16 +346,18 @@ def analyze(lines, stock, master, prev):
         memo = " / ".join(sorted({l["memo"] for l in ls if l["memo"]}))
         stop = any(k in memo for k in ("미운영", "발주중지", "미납"))
 
-        if stop:
-            status = "stop"
-        elif not st:
+        fixed = str(ms.get("고정상태", "")).strip()
+        st_need, cartons, why = need_rule(after, unit)
+        if fixed:
+            status, cartons, why = "end", 0, fixed
+        elif stop:
+            status, cartons = "stop", 0
+        elif not st and st_need in ("short",):
             status = "nostock"
-        elif short:
-            status = "short"
+        elif st_need in ("short", "pre"):
+            status = st_need
         elif any(i["lv"] == "bad" for i in issues):
             status = "bad"
-        elif after < unit:
-            status = "tight"
         else:
             status = "ok"
 
@@ -377,12 +379,12 @@ def analyze(lines, stock, master, prev):
             "total": total, "boxes": boxes, "unit": unit, "stock": qty, "usable": usable,
             "after": after, "short": short, "cartons": cartons, "orderEA": cartons * unit,
             "days": days, "frac": frac, "lots": lots, "issues": issues, "memo": memo, "stop": stop,
-            "status": status, "change": change, "prevTotal": p,
+            "status": status, "change": change, "prevTotal": p, "why": why,
         })
 
     apply_bundles(items, stock, master)
 
-    order = {"short": 0, "nostock": 1, "bad": 2, "tight": 3, "ok": 4, "stop": 5}
+    order = {"short": 0, "nostock": 1, "bad": 2, "pre": 3, "ok": 4, "stop": 5, "end": 6}
     items.sort(key=lambda x: (order[x["status"]], -x["short"], x["brand"], x["name"]))
 
     removed = []
@@ -391,6 +393,17 @@ def analyze(lines, stock, master, prev):
             if code not in by:
                 removed.append({"code": code, "prevTotal": ea, "name": (prev_names or {}).get(code, "")})
     return delivery, items, removed
+
+
+def need_rule(after, unit):
+    """납품 후 남는 수량 기준 발주 판단: (상태, 권장카톤, 이유)"""
+    if after < 0:
+        return "short", math.ceil(-after / unit), f"부족 {-after:,}개"
+    if after == 0:
+        return "short", 1, "납품하면 재고 0 — 1카톤 발주"
+    if after <= unit:
+        return "pre", 1, f"납품 후 {after:,}개 남음(1카톤 이하) — 미리 1카톤 발주"
+    return "ok", 0, ""
 
 
 BUNDLE_BRANDS = ("청담소녀",)
@@ -441,10 +454,13 @@ def apply_bundles(items, stock, master):
             m["short"] = m["cartons"] = m["orderEA"] = 0
             m["poolNote"] = f"단품 기준 계산: 필요 {demand:,}개 ({detail}) · 단품 재고 {avail:,}개"
             m["issues"].insert(0, {"lv": "note", "t": m["poolNote"] + ("" if m is rep else f" → 발주는 '{bname}'에 합산")})
-            if m["status"] != "stop":
-                m["status"] = "short" if short else ("tight" if after < unit else "ok")
+        st_need, ctn, why = need_rule(after, unit)
+        for m in mem:
+            if m["status"] not in ("stop", "end"):
+                m["status"] = st_need if st_need != "ok" else ("bad" if any(i["lv"] == "bad" for i in m["issues"]) else "ok")
+                m["why"] = why
         rep["short"] = short
-        rep["cartons"] = math.ceil(short / unit) if short else 0
+        rep["cartons"] = ctn if rep["status"] not in ("stop", "end") else 0
         rep["orderEA"] = rep["cartons"] * unit
         rep["unit"] = unit
         rep["orderName"], rep["orderCode"] = bname, base
@@ -554,7 +570,7 @@ def main():
     s = defaultdict(int)
     for i in items:
         s[i["status"]] += 1
-    print(f"납품일 {data['delivery']} · {len(items)} SKU · 부족 {s['short']} · 재고없음 {s['nostock']} · 유통기한불가 {s['bad']} · 빠듯 {s['tight']} · 충분 {s['ok']}")
+    print(f"납품일 {data['delivery']} · {len(items)} SKU · 발주필요 {s['short']} · 재고없음 {s['nostock']} · 미리발주 {s['pre']} · 유통기한불가 {s['bad']} · 충분 {s['ok']} · 발주종료 {s['end']} · 총 {sum(i['cartons'] for i in items)}카톤")
     print(f"변동: 신규 {sum(1 for i in changed if i['change']=='new')} · 수량변경 {sum(1 for i in changed if i['change']=='qty')} · 삭제 {len(removed)}")
     print("재고 파일:", smeta)
 
