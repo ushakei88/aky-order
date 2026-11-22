@@ -209,12 +209,13 @@ def row_formulas(r):
 
 def ensure_month_tab(sh, name):
     import gspread
-    try:
-        return sh.worksheet(name), False
-    except gspread.WorksheetNotFound:
-        pass
+    for w in sh.worksheets():
+        if w.title.strip() == name:
+            return w, False
     # 직전 달 탭을 복사해서 새 달 탭을 만든다 (데이터·비용 금액은 비움)
-    tabs = [w for w in sh.worksheets() if re.fullmatch(r"\d\d\.\d\d", w.title)]
+    allws = sh.worksheets()
+    print("탭 목록:", [w.title for w in allws][:8], "찾는 탭:", repr(name))
+    tabs = [w for w in allws if re.fullmatch(r"\d\d\.\d\d", w.title.strip())]
     src = max(tabs, key=lambda w: w.title)
     ws = sh.duplicate_sheet(src.id, insert_sheet_index=[w.id for w in sh.worksheets()].index(src.id), new_sheet_name=name)
     vals = ws.get_all_values()
