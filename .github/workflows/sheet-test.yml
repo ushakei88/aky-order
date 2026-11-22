@@ -1,0 +1,15 @@
+name: 손익 시트 연결 확인
+on:
+  push:
+    paths: ["pnl/sheet_test.py"]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install gspread google-auth
+      - env: { GCP_SA_KEY: "${{ secrets.GCP_SA_KEY }}" }
+        run: python3 pnl/sheet_test.py
