@@ -44,7 +44,6 @@ def main():
     today = dt.datetime.now(KST).date().isoformat()
 
     rows = load(a.xlsx)
-    rows += load_auto(a.xlsx, rows)
     for r in rows:
         if r.get("status") in ("가", "실"):
             continue

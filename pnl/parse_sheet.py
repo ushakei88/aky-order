@@ -7,7 +7,7 @@ def load(path):
         if not re.fullmatch(r'\d\d\.\d\d',ws.title): continue
         yy,mm=map(int,ws.title.split('.'))
         if (yy,mm)<(25,7): continue
-        rows=list(ws.iter_rows(max_row=600,max_col=20,values_only=True))
+        rows=list(ws.iter_rows(max_row=600,max_col=21,values_only=True))
         hr=next((i for i,r in enumerate(rows) if r[0]=='구분'),None)
         if hr is None: continue
         kind=po=ib=None
@@ -20,7 +20,7 @@ def load(path):
             f=lambda i: float(r[i] or 0) if isinstance(r[i],(int,float)) else 0.0
             out.append({'month':f'20{yy:02d}-{mm:02d}','kind':kind,'po':po.date().isoformat() if isinstance(po,dt.datetime) else None,
               'inb':ib.date().isoformat() if isinstance(ib,dt.datetime) else None,'brand':str(r[3]).strip(),'center':str(r[4] or '').strip(),
-              'cost':f(5),'costT':f(7),'sales':f(8),'salesT':f(10),'edi':f(13),'logi':f(16),'margin':f(17),'post':f(19)})
+              'cost':f(5),'costT':f(7),'sales':f(8),'salesT':f(10),'edi':f(13),'logi':f(16),'margin':f(17),'post':f(19),**({'status':'가','auto':True} if str(r[20] or '').startswith('가매출') else ({'status':'실','auto':True} if str(r[20] or '').startswith('자동') else {}))})
     return out
 if __name__=='__main__':
     d=load(sys.argv[1]); json.dump(d,open('rows.json','w'),ensure_ascii=False)

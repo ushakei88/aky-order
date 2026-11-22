@@ -9,6 +9,7 @@
   GCP_SA_KEY=... DASH_PW=... python3 pnl/oy_sheet.py inputs/r1/*.json.enc [--dry]
 """
 import argparse, datetime as dt, glob, json, os, re, sys, tempfile
+import gspread.utils  # noqa: E402  (Actions에서만 필요)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
@@ -152,6 +153,18 @@ def ensure_tab(sh, title, head, index):
     return ws
 
 
+def write_item_tab(sh, items):
+    rnd = lambda v: round(v) if isinstance(v, float) and abs(v) >= 1 else (round(v, 4) if isinstance(v, float) else v)
+    ws = ensure_tab(sh, TAB_ITEM, ITEM_HEAD, 1)
+    old = ws.get_all_values()
+    keep = [r for r in old[1:] if r and r[2] and r[2] not in {i["입고일"] for i in items}]
+    body = keep + [[rnd(it[h]) for h in ITEM_HEAD] for it in items]
+    body.sort(key=lambda r: (str(r[2]), str(r[3]), str(r[8]), str(r[7])))
+    ws.clear()
+    ws.update([ITEM_HEAD] + body, value_input_option="USER_ENTERED")
+    ws.freeze(rows=1)
+
+
 def write_tabs(sh, items, sums, missing):
     rnd = lambda v: round(v) if isinstance(v, float) and abs(v) >= 1 else (round(v, 4) if isinstance(v, float) else v)
     ws = ensure_tab(sh, TAB_ITEM, ITEM_HEAD, 1)
@@ -179,6 +192,111 @@ def write_tabs(sh, items, sums, missing):
     return sums
 
 
+# ---------------------------------------------------------------- 월 탭(26.11 등)에 이어서 누적
+AUTO_TAG_REAL = "자동·실매출"
+AUTO_TAG_PROV = "가매출 · 전량 납품 가정, 납품 후 실매출로 수정 예정"
+
+
+def month_tab_name(inb):
+    return f"{inb[2:4]}.{inb[5:7]}"
+
+
+def row_formulas(r):
+    return [f'=if($D{r}="청담소녀",0,F{r}*0.1)', f"=F{r}+G{r}", None, f'=if($D{r}="청담소녀",0,I{r}*0.1)', f"=I{r}+J{r}",
+            f"=I{r}*0.04", f"=L{r}*10%", f"=L{r}+M{r}", f'=IF(or($E{r}="온라인",$E{r}="글로벌"),0,I{r}*0.04)', f"=O{r}*10%",
+            f"=O{r}+P{r}", f"=K{r}-H{r}-N{r}-Q{r}+T{r}", f"=R{r}/H{r}"]
+
+
+def ensure_month_tab(sh, name):
+    import gspread
+    try:
+        return sh.worksheet(name), False
+    except gspread.WorksheetNotFound:
+        pass
+    # 직전 달 탭을 복사해서 새 달 탭을 만든다 (데이터·비용 금액은 비움)
+    tabs = [w for w in sh.worksheets() if re.fullmatch(r"\d\d\.\d\d", w.title)]
+    src = max(tabs, key=lambda w: w.title)
+    ws = sh.duplicate_sheet(src.id, insert_sheet_index=[w.id for w in sh.worksheets()].index(src.id), new_sheet_name=name)
+    vals = ws.get_all_values()
+    cost_hdr = next((i for i, r in enumerate(vals) if r and r[0].strip() == "<비용>"), len(vals))
+    last = max((i for i in range(10, cost_hdr) if len(vals[i]) > 3 and vals[i][3]), default=10)
+    if last >= 10:
+        ws.batch_clear([f"A11:U{last + 1}"])
+    if cost_hdr < len(vals):
+        ws.batch_clear([f"C{cost_hdr + 3}:E{len(vals)}"])
+    return ws, True
+
+
+def write_month_tabs(sh, items):
+    """자동_품목을 월 탭 형식(납품건 × 브랜드 × 센터)으로 묶어 월 탭 데이터 아래에 이어 쓴다.
+    자동으로 쓴 줄은 U열에 표시가 있어서, 다음 실행 때 지우고 다시 쓴다(가매출 → 실매출 수정)."""
+    by_tab = {}
+    for it in items:
+        by_tab.setdefault(month_tab_name(it["입고일"]), []).append(it)
+    report = []
+    for name, its in sorted(by_tab.items()):
+        ws, created = ensure_month_tab(sh, name)
+        vals = ws.get_all_values()
+        cost_hdr = next((i for i, r in enumerate(vals) if r and r[0].strip() == "<비용>"), len(vals))
+        # 기존 자동 줄 지우기 (아래에서부터)
+        auto_rows = [i + 1 for i in range(10, cost_hdr) if len(vals[i]) > 20 and vals[i][20].startswith(("자동", "가매출"))]
+        if auto_rows and max(auto_rows) - min(auto_rows) + 1 == len(auto_rows):
+            ws.delete_rows(min(auto_rows), max(auto_rows))
+        else:
+            for r in sorted(auto_rows, reverse=True):
+                ws.delete_rows(r)
+        vals = ws.get_all_values()
+        cost_hdr = next((i for i, r in enumerate(vals) if r and r[0].strip() == "<비용>"), len(vals))
+        manual_last = max((i + 1 for i in range(10, cost_hdr) if len(vals[i]) > 3 and vals[i][3]), default=10)
+        groups = {}
+        for it in its:
+            k = (it["발주일"], it["입고일"], it["브랜드"], it["센터"])
+            g = groups.setdefault(k, {"cost": 0.0, "sales": 0.0, "prov": False})
+            g["cost"] += num(it["매입금액(공급가)"]); g["sales"] += num(it["올영매출(공급가)"])
+            g["prov"] |= it["상태"] == "가매출"
+        keys = sorted(groups, key=lambda k: (k[1], k[0], k[2], k[3]))
+        n = len(keys)
+        if not n:
+            continue
+        free = cost_hdr - manual_last  # 비용 표 위 빈 줄 수
+        need = n + 2 - free            # 비용 표 위로 빈 줄 2개는 남김
+        start = manual_last + 1
+        if need > 0:
+            ws.insert_rows([[""] * 21] * need, row=start)
+        rows, prev = [], None
+        for i, k in enumerate(keys):
+            r = start + i
+            po, inb, brand, center = k
+            g = groups[k]
+            f = row_formulas(r)
+            first = (po, inb) != prev
+            prev = (po, inb)
+            rows.append(["정기" if first else "", po if first else "", inb if first else "", brand, center, round(g["cost"]),
+                         f[0], f[1], round(g["sales"]), f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11], f[12], 0,
+                         AUTO_TAG_PROV if g["prov"] else AUTO_TAG_REAL])
+        end = start + n - 1
+        ws.update(f"A{start}:U{end}", rows, value_input_option="USER_ENTERED")
+        # 서식은 수기 마지막 줄 서식을 복사
+        sid = ws.id
+        sh.batch_update({"requests": [{"copyPaste": {
+            "source": {"sheetId": sid, "startRowIndex": manual_last - 1, "endRowIndex": manual_last, "startColumnIndex": 0, "endColumnIndex": 20},
+            "destination": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 0, "endColumnIndex": 20},
+            "pasteType": "PASTE_FORMAT"}}]})
+        # 합계(10행)·브랜드별 마진(6행) 범위를 마지막 줄까지 넓힌다
+        top = ws.get("A6:AG10", value_render_option="FORMULA")
+        upd = []
+        for ri, row in enumerate(top):
+            for ci, v in enumerate(row):
+                if isinstance(v, str) and v.startswith("=") and "11:" in v:
+                    nv = re.sub(r"(\$?[A-Z]{1,2}\$?11:\$?[A-Z]{1,2}\$?)(\d+)", lambda m: m.group(1) + str(max(int(m.group(2)), end)), v)
+                    if nv != v:
+                        upd.append({"range": gspread.utils.rowcol_to_a1(6 + ri, ci + 1), "values": [[nv]]})
+        if upd:
+            ws.batch_update(upd, value_input_option="USER_ENTERED")
+        report.append(f"{name} 탭 {start}~{end}행 ({n}줄{', 새 탭' if created else ''})")
+    return report
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")
@@ -200,8 +318,9 @@ def main():
     gc, _ = gs_client()
     sh = gc.open_by_key(SHEET_ID)
     items, missing = calc(r1, read_law(sh))
-    sums = write_tabs(sh, items, None, missing)
-    print(f"자동_품목 {len(items)}줄 갱신 · 자동_월집계 {len(sums)}줄")
+    write_item_tab(sh, items)
+    rep = write_month_tabs(sh, items)
+    print(f"자동_품목 {len(items)}줄 갱신 · " + " / ".join(rep))
     if missing:
         print("LAW에 매입가 없음:", "; ".join(f"{c} {n}" for c, n in missing))
         open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a").write("LAW에 매입가 없는 품목: " + ", ".join(n or c for c, n in missing) + "\n")
