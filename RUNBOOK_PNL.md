@@ -6,9 +6,35 @@
 한국시간 오늘 기준 **3일 전 ~ 내일** 사이의 화요일·목요일 납품일 전부 (예: 목요일 실행 → 월요일 지난 화·이번 목, 수요일 실행 → 지난 화·내일 목).
 
 ## 2. 납품일마다
-1. RUNBOOK.md 2장(올리브원 R1 조회) 1~6번과 같은 방법으로 조회한다. 로그인 화면이면 멈추고 사용자에게 알린다.
-2. 6번 javascript의 cols는 RUNBOOK.md에 있는 것(단가·금액·확정 여부 포함)을 그대로 쓴다. 추가로 `'supTobeQty'`를 cols 끝에 넣는다.
-3. 결과를 `r1_YYYY-MM-DD.json`(납품일)으로 저장한다. 행이 0개면 건너뛴다.
+1. 내장 브라우저에서 https://oypartner.cj.net/CJOYP/nexacro/main.fo 를 연다. 로그인 화면이면 멈추고 사용자에게 로그인해 달라고 알린다.
+2. 왼쪽 메뉴 검색칸(약 80,152)에 `납품확인서` → 아래 화살표 → Enter 로 납품확인서(R1) 화면을 연다.
+3. javascript_tool로 아래를 실행한다 (DATES에 조회할 납품일 YYYYMMDD 목록). 화면 버튼 대신 화면의 조회 함수를 그대로 부른다(조회만 함).
+```js
+(async () => {
+  const DATES = ['20261117','20261119'];
+  const app = nexacro.getApplication ? nexacro.getApplication() : window.application; const seen = new Set(); let f = null;
+  function w(o,d){ if(!o||d>9||seen.has(o)||f) return; seen.add(o);
+    try{ if(o.ds_supVeridcLst&&o.ds_supVeridcLst.getRowCount){ f=o; return; } }catch(e){}
+    const k=[]; try{ if(o.all) for(let i=0;i<o.all.length;i++) k.push(o.all[i]); }catch(e){}
+    try{ if(o.frames) for(let i=0;i<o.frames.length;i++) k.push(o.frames[i]); }catch(e){}
+    for(const n of ['mainframe','form','frame','div_work','div_main','childframe']){ try{ if(o[n]) k.push(o[n]); }catch(e){} }
+    k.forEach(x=>w(x,d+1)); }
+  w(app,0); if(!f) return 'NOTFOUND';
+  const cols=['stkinYmd','poYmd','stkinCntrCd','gdsCd','gdsNm','poQty','supQty','supTobeQty','costUprc','vatSpCd','cnfmYn','stkinStatCd','cntrPoSlipNo','cntrPoSlipSeq','rmkCont'];
+  const out={};
+  for (const d of DATES) {
+    f.div_inqCond.cal_stkinStrtYmd.set_value(d); f.div_inqCond.cal_stkinEndYmd.set_value(d);
+    f.ds_supVeridcLst.clearData(); f.fn_search_callback('',true);
+    for(let t=0;t<30;t++){ await new Promise(r=>setTimeout(r,500)); if(f.ds_supVeridcLst.getRowCount()>0) break; }
+    await new Promise(r=>setTimeout(r,800));
+    const ds=f.ds_supVeridcLst, rows=[]; for(let r=0;r<ds.getRowCount();r++) rows.push(cols.map(c=>ds.getColumn(r,c)));
+    out[d]={cols,rows};
+  }
+  window.__r1out=out;
+  return Object.fromEntries(Object.entries(out).map(([k,v])=>[k,v.rows.length]));
+})()
+```
+4. 납품일마다 `JSON.stringify(window.__r1out['YYYYMMDD'])` 결과를 `r1_YYYY-MM-DD.json` 으로 저장한다(행 0개면 건너뜀).
 
 ## 3. 저장
 ```bash

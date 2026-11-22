@@ -70,16 +70,19 @@ def calc(r1, law):
     items, missing = [], set()
     for g in r1:
         sup, tobe = num(g.get("supQty")), num(g.get("supTobeQty"))
-        if sup > 0:
+        done = g.get("cnfmYn") == "Y" and str(g.get("stkinStatCd")) == "4"  # 검수(PDA) 확정
+        if done or sup > 0:
             status, qty = "실매출", sup
         elif tobe > 0:
             status, qty = "가매출", tobe
         else:
             continue
+        if qty <= 0:
+            continue  # 확정됐는데 0개 = 미납·회송
         c = code(g.get("gdsCd"))
         center = "온라인" if g.get("stkinCntrCd") == "LA04" else "오프라인"
         price = num(g.get("costUprc"))
-        vat = num(g.get("vatRt")) / 100 if g.get("vatRt") not in (None, "") else 0.1
+        vat = 0.0 if g.get("vatSpCd") == "M" else (num(g.get("vatRt")) / 100 if g.get("vatRt") not in (None, "") else 0.1)  # M = 면세
         sales = price * qty
         cost_u = law.get(c)
         note = ""
