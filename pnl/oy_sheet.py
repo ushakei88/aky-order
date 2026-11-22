@@ -210,14 +210,13 @@ def row_formulas(r):
 def ensure_month_tab(sh, name):
     import gspread
     for w in sh.worksheets():
-        if w.title.strip() == name:
+        if w.title.strip().lstrip("'") == name:
             return w, False
     # 직전 달 탭을 복사해서 새 달 탭을 만든다 (데이터·비용 금액은 비움)
     allws = sh.worksheets()
-    print("탭 목록:", [w.title for w in allws][:8], "찾는 탭:", repr(name))
-    tabs = [w for w in allws if re.fullmatch(r"\d\d\.\d\d", w.title.strip())]
-    src = max(tabs, key=lambda w: w.title)
-    ws = sh.duplicate_sheet(src.id, insert_sheet_index=[w.id for w in sh.worksheets()].index(src.id), new_sheet_name=name)
+    tabs = [w for w in allws if re.fullmatch(r"\d\d\.\d\d", w.title.strip().lstrip("'"))]
+    src = max(tabs, key=lambda w: w.title.strip().lstrip("'"))
+    ws = sh.duplicate_sheet(src.id, insert_sheet_index=[w.id for w in allws].index(src.id), new_sheet_name=("'" if src.title.startswith("'") else "") + name)
     vals = ws.get_all_values()
     cost_hdr = next((i for i, r in enumerate(vals) if r and r[0].strip() == "<비용>"), len(vals))
     last = max((i for i in range(10, cost_hdr) if len(vals[i]) > 3 and vals[i][3]), default=10)

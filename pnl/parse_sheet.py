@@ -4,8 +4,9 @@ def load(path):
     wb=openpyxl.load_workbook(path,data_only=True,read_only=True)
     out=[]
     for ws in wb.worksheets:
-        if not re.fullmatch(r'\d\d\.\d\d',ws.title): continue
-        yy,mm=map(int,ws.title.split('.'))
+        t=ws.title.strip().lstrip("'")
+        if not re.fullmatch(r'\d\d\.\d\d',t): continue
+        yy,mm=map(int,t.split('.'))
         if (yy,mm)<(25,7): continue
         rows=list(ws.iter_rows(max_row=600,max_col=21,values_only=True))
         hr=next((i for i,r in enumerate(rows) if r[0]=='구분'),None)
