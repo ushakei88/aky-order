@@ -9,3 +9,7 @@
 - 기준표: `master.csv` (소비기한일수·입수량·프리미엄·브랜드 발주메일)
 
 필요한 Secrets: `DASH_PW`, `NAVER_ID`, `NAVER_PW`
+
+## 올영 손익 대시보드 (`pnl/`)
+- 화면: `pnl/index.html` — 대표님용 월 매출·마진·브랜드·납품건별 손익 (가매출/실매출 표시)
+- 데이터: 손익 구글시트를 엑셀로 내려받아 `pnl/build_pnl.py`로 암호화 (`pnl/data.enc`)
