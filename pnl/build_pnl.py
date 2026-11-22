@@ -24,7 +24,10 @@ def main():
 
     rows = load(a.xlsx)
     for r in rows:
-        r["status"] = "가" if (r.get("inb") and r["inb"] >= today) else "실"
+        # 시트에 수기로 넣은 행은 실매출. 단, 이번 달 안에서 입고일이 아직 안 온 금액 행만 가매출로 본다
+        # (25.12 탭처럼 연도를 잘못 적은 날짜는 월과 안 맞아서 가매출로 잡지 않음)
+        fut = r.get("inb") and r["inb"] >= today and r["inb"][:7] == r["month"] and (r["salesT"] or r["margin"])
+        r["status"] = "가" if fut else "실"
     if a.provisional and os.path.exists(a.provisional):
         for r in json.load(open(a.provisional, encoding="utf-8")):
             r["status"] = r.get("status", "가")
