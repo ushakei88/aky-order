@@ -24,7 +24,7 @@
     for(const n of ['mainframe','form','frame','div_work','div_main','childframe']){ try{ if(o[n]) k.push(o[n]); }catch(e){} }
     k.forEach(x=>w(x,d+1)); }
   w(app,0); if(!f) return 'NOTFOUND';
-  const cols=['stkinYmd','poYmd','stkinCntrCd','stkinCntrNm','gdsCd','gdsNm','inptUnitQty','inptUnitPerQty','poQty','supQty','mfgYmd','dstrTlmtYmd','rmkCont','oymaster','premBrndYn','cntrPoSlipNo','cntrPoSlipSeq','mdEmpNm','mdEmailAddr'];
+  const cols=['stkinYmd','poYmd','stkinCntrCd','stkinCntrNm','gdsCd','gdsNm','inptUnitQty','inptUnitPerQty','poQty','supQty','mfgYmd','dstrTlmtYmd','rmkCont','oymaster','premBrndYn','cntrPoSlipNo','cntrPoSlipSeq','mdEmpNm','mdEmailAddr','costUprc','supCostAmt','supCostVatAmt','vatSpCd','vatRt','cnfmYn','stkinStatCd','stkinResvQty','boxPerQty'];
   const rows=[]; for(let r=0;r<f.getRowCount();r++) rows.push(cols.map(c=>f.getColumn(r,c)));
   return JSON.stringify({cols,rows});
 })()
