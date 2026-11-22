@@ -13,6 +13,27 @@ from build import encrypt, ITER, KST, kdf
 MAIN = "조선미녀"
 
 
+def load_auto(path, manual):
+    """시트의 '자동_월집계' 탭 → 손익 행. 수기 월 탭에 이미 있는 입고일은 건너뜀(중복 방지)"""
+    import openpyxl
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    if "자동_월집계" not in wb.sheetnames:
+        return []
+    have = {(r["month"], r["inb"]) for r in manual}
+    out = []
+    for v in list(wb["자동_월집계"].iter_rows(values_only=True))[1:]:
+        if not v or not v[3]:
+            continue
+        inb = str(v[3])[:10]
+        if (inb[:7], inb) in have:
+            continue
+        f = lambda x: float(str(x).replace(",", "")) if x not in (None, "") else 0.0
+        out.append({"month": inb[:7], "kind": v[1] or "정기", "po": str(v[2])[:10], "inb": inb, "brand": v[4], "center": v[5],
+                    "cost": f(v[6]), "costT": f(v[8]), "sales": f(v[9]), "salesT": f(v[11]), "edi": f(v[14]), "logi": f(v[17]),
+                    "margin": f(v[18]), "post": 0.0, "status": "가" if v[0] == "가매출" else "실", "auto": True})
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("xlsx")
@@ -23,7 +44,10 @@ def main():
     today = dt.datetime.now(KST).date().isoformat()
 
     rows = load(a.xlsx)
+    rows += load_auto(a.xlsx, rows)
     for r in rows:
+        if r.get("status") in ("가", "실"):
+            continue
         # 시트에 수기로 넣은 행은 실매출. 단, 이번 달 안에서 입고일이 아직 안 온 금액 행만 가매출로 본다
         # (25.12 탭처럼 연도를 잘못 적은 날짜는 월과 안 맞아서 가매출로 잡지 않음)
         fut = r.get("inb") and r["inb"] >= today and r["inb"][:7] == r["month"] and (r["salesT"] or r["margin"])

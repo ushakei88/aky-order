@@ -1,0 +1,33 @@
+name: 올영 손익 갱신 (시트 누적 + 대시보드)
+on:
+  push:
+    paths: ["inputs/r1/**", "pnl/oy_sheet.py", "pnl/build_pnl.py", "pnl/parse_sheet.py"]
+  schedule:
+    - cron: "10 12 * * *"   # 매일 21:10 (한국) — 시트를 손으로 고친 것도 대시보드에 반영
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: dashboard, cancel-in-progress: false }
+jobs:
+  pnl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install openpyxl cryptography gspread google-auth requests
+      - name: 납품확인서 → 시트 자동 탭
+        env: { GCP_SA_KEY: "${{ secrets.GCP_SA_KEY }}", DASH_PW: "${{ secrets.DASH_PW }}" }
+        run: |
+          ls inputs/r1/*.json.enc >/dev/null 2>&1 || { echo "납품확인서 자료 없음"; exit 0; }
+          python3 pnl/oy_sheet.py "inputs/r1/*.json.enc"
+      - name: 시트 내려받아 대시보드 데이터 만들기
+        env: { GCP_SA_KEY: "${{ secrets.GCP_SA_KEY }}", DASH_PW: "${{ secrets.DASH_PW }}" }
+        run: |
+          python3 pnl/export_sheet.py /tmp/oy_pnl.xlsx
+          python3 -W ignore pnl/build_pnl.py /tmp/oy_pnl.xlsx
+      - name: 저장
+        run: |
+          git config user.name "aky-bot"; git config user.email "bot@users.noreply.github.com"
+          git add pnl/data.enc pnl/meta.json
+          git diff --cached --quiet || { git commit -m "손익 갱신 $(TZ=Asia/Seoul date '+%m-%d %H:%M')"; git pull --rebase -q; git push; }
