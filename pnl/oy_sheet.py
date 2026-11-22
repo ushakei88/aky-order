@@ -276,15 +276,26 @@ def write_month_tabs(sh, items):
                          AUTO_TAG_PROV if g["prov"] else AUTO_TAG_REAL])
         end = start + n - 1
         ws.update(f"A{start}:U{end}", rows, value_input_option="USER_ENTERED")
-        # 서식은 수기 마지막 줄 서식을 복사
+        # 서식: 수기 줄 중 납품건 첫 줄(구분·발주일·입고일이 적힌 줄)의 서식을 그대로 복사하고,
+        #       수기처럼 납품건마다 구분·발주일·입고일 칸을 세로로 병합한다
         sid = ws.id
-        sh.batch_update({"requests": [{"copyPaste": {
-            "source": {"sheetId": sid, "startRowIndex": manual_last - 1, "endRowIndex": manual_last, "startColumnIndex": 0, "endColumnIndex": 20},
-            "destination": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 0, "endColumnIndex": 20},
-            "pasteType": "PASTE_FORMAT"}}, {"repeatCell": {
-            "range": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 1, "endColumnIndex": 3},
-            "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}}},
-            "fields": "userEnteredFormat.numberFormat"}}]})
+        group_first = max((i + 1 for i in range(10, manual_last) if vals[i] and vals[i][0].strip() == "정기"), default=11)
+        reqs = [{"unmergeCells": {"range": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 0, "endColumnIndex": 3}}},
+                {"copyPaste": {
+                    "source": {"sheetId": sid, "startRowIndex": group_first - 1, "endRowIndex": group_first, "startColumnIndex": 0, "endColumnIndex": 21},
+                    "destination": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 0, "endColumnIndex": 21},
+                    "pasteType": "PASTE_FORMAT"}}]
+        gs, prev = [], None
+        for i, k in enumerate(keys):
+            if (k[0], k[1]) != prev:
+                gs.append([start + i, start + i]); prev = (k[0], k[1])
+            else:
+                gs[-1][1] = start + i
+        for a_, b_ in gs:
+            if b_ > a_:
+                reqs.append({"mergeCells": {"range": {"sheetId": sid, "startRowIndex": a_ - 1, "endRowIndex": b_, "startColumnIndex": 0, "endColumnIndex": 3},
+                                            "mergeType": "MERGE_COLUMNS"}})
+        sh.batch_update({"requests": reqs})
         # 합계(10행)·브랜드별 마진(6행) 범위를 마지막 줄까지 넓힌다
         top = ws.get("A6:AG10", value_render_option="FORMULA")
         upd = []
