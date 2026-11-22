@@ -281,7 +281,10 @@ def write_month_tabs(sh, items):
         sh.batch_update({"requests": [{"copyPaste": {
             "source": {"sheetId": sid, "startRowIndex": manual_last - 1, "endRowIndex": manual_last, "startColumnIndex": 0, "endColumnIndex": 20},
             "destination": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 0, "endColumnIndex": 20},
-            "pasteType": "PASTE_FORMAT"}}]})
+            "pasteType": "PASTE_FORMAT"}}, {"repeatCell": {
+            "range": {"sheetId": sid, "startRowIndex": start - 1, "endRowIndex": end, "startColumnIndex": 1, "endColumnIndex": 3},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "yyyy-mm-dd"}}},
+            "fields": "userEnteredFormat.numberFormat"}}]})
         # 합계(10행)·브랜드별 마진(6행) 범위를 마지막 줄까지 넓힌다
         top = ws.get("A6:AG10", value_render_option="FORMULA")
         upd = []
