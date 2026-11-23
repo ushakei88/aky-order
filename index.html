@@ -290,6 +290,9 @@ function home(){
     <div class="progress">${STS.map(k=>`<i style="width:${cnt(k)/it.length*100}%;background:${COLOR[k]}"></i>`).join('')}</div>
     <div class="legend">${STS.filter(k=>cnt(k)).map(k=>`<span style="--c:${COLOR[k]}">${ST[k][0]} ${cnt(k)}</span>`).join('')}</div>
   </div>
+  ${(()=>{const inb=it.filter(i=>i.inbound>0);if(!inb.length)return '';return `<div class="card" style="border:1.5px solid var(--greenbg)"><h3>발주일 이후 추가 입고 <span class="pill ok">${inb.length}품목</span></h3>
+    <div class="sub" style="font-size:13px;margin:-6px 0 6px">발주일 재고(${esc((D.baseLabel||'').replace(/^.*_(\d{6}).*$/,'$1'))}) → 지금(${esc((D.stockLabel||'').replace(/^.*_(\d{6}).*$/,'$1'))})</div>
+    ${inb.map(i=>`<button class="kv" style="width:100%;text-align:left" data-code="${i.code}"><span>${esc(i.name)}</span><b class="num">${n(i.baseStock)} → ${n(i.stock)} <span style="color:var(--green)">+${n(i.inbound)}</span></b></button>`).join('')}</div>`})()}
   ${brands.length?`<div class="card"><h3>브랜드별 발주 <span class="more" onclick="go('need')">자세히 ›</span></h3>
     ${brands.map(b=>`<div class="brandrow"><div class="av">${esc(b.brand[0]||'?')}</div><div class="sp"><b>${esc(b.brand)}</b><div class="muted" style="font-size:13px">${b.items.length}품목 · ${n(b.cartons)}카톤 (${n(b.ea)}개)</div></div><button class="btn small red" data-brand="${esc(b.brand)}">시켜야해요</button></div>`).join('')}
   </div>`:''}
@@ -313,7 +316,7 @@ function row(i){
     <div class="row" style="align-items:flex-start"><div class="sp"><div class="nm">${esc(i.name)}</div>
       <div class="meta num">${i.code} · 입수 ${i.unit}</div></div>
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${types.map(t=>`<span class="pill ${t==='온라인'?'pre':'gold'}">${t==='온라인'?'온':'오프'}</span>`).join('')}${i.change?`<span class="pill lun">${i.change==='new'?'신규':'수량변경'}</span>`:''}</div></div>
-    <div class="nums"><div>발주<b>${n(i.total)}</b>${n(i.boxes)}박스</div><div>재고<b>${n(i.stock)}</b>${i.usable!==i.stock?`가능 ${n(i.usable)}`:'&nbsp;'}</div>
+    <div class="nums"><div>발주<b>${n(i.total)}</b>${n(i.boxes)}박스</div><div>재고<b>${n(i.stock)}</b>${i.inbound>0?`<span style="color:var(--green);font-weight:700">+${n(i.inbound)} 입고</span>`:i.inbound<0?`<span style="color:var(--stamp)">${n(i.inbound)}</span>`:i.usable!==i.stock?`가능 ${n(i.usable)}`:'&nbsp;'}</div>
       <div class="${i.after<0?'neg':'pos'}">납품 후<b>${i.after>0?'+':''}${n(i.after)}</b>&nbsp;</div><div>상태<b style="font-size:13px;color:${COLOR[i.status]}">${ST[i.status][0].split(' ')[0]}</b>&nbsp;</div></div>
     ${ORD(i)?`<div class="ctn" ${i.status==='pre'?'style="background:var(--amber)"':''}><span class="sp">${esc(i.why||'')} → ${i.orderName&&i.orderCode!==i.code?'단품 ':''}발주</span><b>${n(i.cartons)}카톤</b><span style="font-size:13px;opacity:.85">(${n(i.orderEA)}개)</span></div>`:''}
     ${i.memo?`<div class="iss note">전산 메모: ${esc(i.memo)}</div>`:''}
@@ -366,6 +369,7 @@ function detail(code){
     ${i.lines.map(l=>`<div class="kv"><span>${esc(l.center)} <span class="pill ${l.type==='온라인'?'pre':'gold'}">${l.type==='온라인'?'온':'오프'}</span></span><b class="num">${n(l.ea)}개 (${n(l.box)}박스)</b></div>`).join('')}
     <div class="kv"><span>발주 합계</span><b class="num">${n(i.total)}개</b></div>
     <div class="kv"><span>현재고 / 납품 가능</span><b class="num">${n(i.stock)} / ${n(i.usable)}</b></div>
+    ${i.inbound?`<div class="kv"><span>발주일 재고 → 지금</span><b class="num">${n(i.baseStock)} → ${n(i.stock)} <span style="color:${i.inbound>0?'var(--green)':'var(--stamp)'}">(${i.inbound>0?'+':''}${n(i.inbound)}${i.inbound>0?' 추가 입고':''})</span></b></div>`:''}
     <div class="kv"><span>납품 후 남는 수량</span><b class="num" style="color:${i.after<0?'var(--stamp)':'var(--green)'}">${n(i.after)}</b></div>
     <div class="kv"><span>입수량 · 소비기한</span><b class="num">${i.unit}개/카톤 · ${i.days?i.days+'일':'-'}</b></div>
     ${ORD(i)?`<div class="kv"><span>발주할 수량</span><b class="num" style="color:var(--stamp)">${n(i.cartons)}카톤 = ${n(i.orderEA)}개</b></div>`:''}

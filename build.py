@@ -534,7 +534,22 @@ def main():
                      "new": sum(1 for i in changed if i["change"] == "new"), "qty": sum(1 for i in changed if i["change"] == "qty"),
                      "removed": len(removed)})
 
+    # 발주일(처음 계산한 날) 재고를 기억해 두고, 그 뒤 들어온 수량을 +로 보여준다
+    base_label = None
+    if prev is not None and old:
+        ob = {i["code"]: i for i in old.get("items", [])}
+        base_label = old.get("baseLabel") or old.get("stockLabel")
+        for i in items:
+            o = ob.get(i["code"])
+            i["baseStock"] = o.get("baseStock", o.get("stock")) if o else i["stock"]
+    else:
+        for i in items:
+            i["baseStock"] = i["stock"]
+    for i in items:
+        i["inbound"] = i["stock"] - (i["baseStock"] or 0)
+
     data = {
+        "baseLabel": base_label or (a.stock_label or (os.path.basename(a.stock) if a.stock else "")),
         "built": now.strftime("%Y-%m-%d %H:%M"),
         "delivery": delivery.isoformat() if delivery else None,
         "stockLabel": a.stock_label or (os.path.basename(a.stock) if a.stock else "재고 파일 없음"),
