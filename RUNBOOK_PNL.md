@@ -20,7 +20,7 @@
     for(const n of ['mainframe','form','frame','div_work','div_main','childframe']){ try{ if(o[n]) k.push(o[n]); }catch(e){} }
     k.forEach(x=>w(x,d+1)); }
   w(app,0); if(!f) return 'NOTFOUND';
-  const cols=['stkinYmd','poYmd','stkinCntrCd','gdsCd','gdsNm','poQty','supQty','supTobeQty','costUprc','vatSpCd','cnfmYn','stkinStatCd','cntrPoSlipNo','cntrPoSlipSeq','rmkCont'];
+  const cols=['stkinYmd','poYmd','stkinCntrCd','gdsCd','gdsNm','poQty','supQty','supTobeQty','costUprc','vatSpCd','cnfmYn','stkinStatCd','cntrPoSlipNo','cntrPoSlipSeq','rmkCont','inptUnitPerQty'];
   const out={};
   for (const d of DATES) {
     f.div_inqCond.cal_stkinStrtYmd.set_value(d); f.div_inqCond.cal_stkinEndYmd.set_value(d);

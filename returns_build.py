@@ -22,23 +22,41 @@ def build_returns(pw, r1_glob=os.path.join(HERE, "inputs", "r1", "*.json.enc"), 
         d = open(reasons_path, "rb").read()
         reasons = json.loads(AESGCM(key(pw, d[:16])).decrypt(d[16:28], d[28:], None))
     rk = {(r["date"], r["center"], r["code"]): r for r in reasons}
+    # 입수량·고정상태(발주종료 등)는 master.csv에서
+    import csv
+    unit_of, fixed = {}, {}
+    mp = os.path.join(HERE, "master.csv")
+    if os.path.exists(mp):
+        for m in csv.DictReader(open(mp, encoding="utf-8-sig")):
+            unit_of[m.get("상품코드")] = m.get("입수량")
+            if m.get("고정상태"):
+                fixed[m.get("상품코드")] = m.get("고정상태")
     out = {}
     for g in rows:
         sup, tobe = float(g.get("supQty") or 0), float(g.get("supTobeQty") or 0)
         done = g.get("cnfmYn") == "Y" and str(g.get("stkinStatCd")) == "4"
-        if not done or tobe <= sup:
+        po = float(g.get("poQty") or 0)
+        if not done:
+            continue
+        if tobe > sup:
+            kind, tried = "회송", tobe          # 납품하러 갔는데 검수에서 돌려받음
+        elif tobe == 0 and sup == 0 and po > 0:
+            kind, tried = "미출고", po          # 처음부터 0으로 넣어 납품 시도 안 함
+        else:
             continue
         s = str(g.get("stkinYmd")); date = f"{s[:4]}-{s[4:6]}-{s[6:8]}"
         c = _code(g.get("gdsCd")); cc = g.get("stkinCntrCd")
-        unit = float(g.get("inptUnitPerQty") or 0)
+        unit = float(g.get("inptUnitPerQty") or 0) or float(unit_of.get(c) or 0)
         k = (date, cc, c)
         o = out.setdefault(k, {"date": date, "center": "온라인" if cc == "LA04" else "오프라인", "code": c, "name": g.get("gdsNm"),
-                               "brand": brand_of(g.get("gdsNm")), "tried": 0, "delivered": 0, "unit": unit})
-        o["tried"] += tobe; o["delivered"] += sup
+                               "brand": brand_of(g.get("gdsNm")), "tried": 0, "delivered": 0, "unit": unit, "kind": kind,
+                               "po": 0, "rmk": (g.get("rmkCont") or "").strip()})
+        o["tried"] += tried; o["delivered"] += sup; o["po"] += po
     for k, r in rk.items():
         if k not in out:
             out[k] = {"date": r["date"], "center": "온라인" if r["center"] == "LA04" else "오프라인", "code": r["code"], "name": r["name"],
-                      "brand": brand_of(r["name"]), "tried": r["qty"], "delivered": 0, "unit": r["qty"] / max(1, r.get("boxes", 1))}
+                      "brand": brand_of(r["name"]), "tried": r["qty"], "delivered": 0, "unit": r["qty"] / max(1, r.get("boxes", 1)),
+                      "kind": r.get("kind", "회송"), "po": r["qty"], "rmk": ""}
     res = []
     for k, o in out.items():
         r = rk.get(k, {})
@@ -48,7 +66,10 @@ def build_returns(pw, r1_glob=os.path.join(HERE, "inputs", "r1", "*.json.enc"), 
         o["cartons"] = round(o["returned"] / o["unit"], 1) if o["unit"] else r.get("boxes")
         p, v = price.get(o["code"], (0, 0.1))
         o["lost"] = round(o["returned"] * p * (1 + v))
-        o["reason"] = r.get("reason", "사유 확인 전")
+        if o["kind"] == "미출고":
+            o["reason"] = r.get("reason") or fixed.get(o["code"]) or (f"전산 메모: {o['rmk']}" if o["rmk"] else "납품예정수량 0 입력 (재고 부족 등)")
+        else:
+            o["reason"] = r.get("reason", "사유 확인 전")
         o["memo"] = r.get("memo", "")
         o["source"] = r.get("source", "")
         res.append(o)
