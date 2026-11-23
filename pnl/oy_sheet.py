@@ -302,11 +302,18 @@ def write_month_tabs(sh, items):
         # 행 높이: 수기 데이터 줄에서 가장 많이 쓴 높이로 맞춘다
         try:
             meta = sh.fetch_sheet_metadata(params={"ranges": f"'{ws.title}'!A11:A{manual_last}", "fields": "sheets(data(rowMetadata(pixelSize)))"})
-            hs = [m.get("pixelSize") for m in meta["sheets"][0]["data"][0].get("rowMetadata", []) if m.get("pixelSize")]
-            if hs:
-                h = max(set(hs), key=hs.count)
+            md = meta["sheets"][0]["data"][0].get("rowMetadata", [])
+            first_h = [m.get("pixelSize") for i, m in enumerate(md) if m.get("pixelSize") and len(vals[10 + i]) and vals[10 + i][0].strip()]
+            other_h = [m.get("pixelSize") for i, m in enumerate(md) if m.get("pixelSize") and not (len(vals[10 + i]) and vals[10 + i][0].strip())]
+            if other_h:
+                h = max(set(other_h), key=other_h.count)
                 reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": start - 1, "endIndex": end},
                                                            "properties": {"pixelSize": h}, "fields": "pixelSize"}})
+            if first_h:
+                fh = max(set(first_h), key=first_h.count)
+                for a_, _b in gs:  # 납품건 첫 줄은 수기처럼 조금 더 높게
+                    reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": a_ - 1, "endIndex": a_},
+                                                               "properties": {"pixelSize": fh}, "fields": "pixelSize"}})
         except Exception as e:  # 높이를 못 읽어도 나머지는 진행
             print("행 높이 읽기 실패:", e)
         sh.batch_update({"requests": reqs})
