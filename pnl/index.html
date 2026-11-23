@@ -168,6 +168,7 @@ table.t th:first-child,table.t td:first-child{text-align:left}
     <button data-tab="trend"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>월별</button>
     <button data-tab="brand"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h6"/></svg>브랜드</button>
     <button data-tab="deliv"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>납품건</button>
+    <button data-tab="ret"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>회송<span class="badge hide" id="retBadge"></span></button>
   </div></nav>
 </div>
 <div class="dim" id="dim"></div>
@@ -217,10 +218,12 @@ function sum(rs){const o={salesT:0,costT:0,edi:0,logi:0,margin:0,provS:0,provM:0
 function start(){
   $('#lock').classList.add('hide');$('#app').classList.remove('hide');
   $('#updated').innerHTML=`업데이트<br>${esc(D.built.slice(5).replace('-','.'))}`;
-  MON=MON||D.months[D.months.length-1].m;render();
+  MON=MON||D.months[D.months.length-1].m;
+  const rb=(D.returns||[]).filter(r=>r.date.slice(0,7)===D.months[D.months.length-1].m).length;$('#retBadge').textContent=rb;$('#retBadge').classList.toggle('hide',!rb);
+  render();
 }
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>{TAB=b.dataset.tab;document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.toggle('on',x===b));render();scrollTo(0,0);});
-function render(){$('#main').innerHTML=`<section class="page">${({home,trend,brand,deliv})[TAB]()}</section>`;bind();}
+function render(){$('#main').innerHTML=`<section class="page">${({home,trend,brand,deliv,ret})[TAB]()}</section>`;bind();}
 function bind(){
   const s=$('#msel');if(s)s.onchange=()=>{MON=s.value;render();};
   document.querySelectorAll('[data-exj]').forEach(b=>b.onclick=()=>{EXJ=b.dataset.exj==='1';render();});
@@ -261,6 +264,12 @@ function home(){
   <div class="card"><h3>매출 상위 브랜드 <span class="more" onclick="document.querySelector('[data-tab=brand]').click()">전체 ›</span></h3>
     ${br.map(b=>brandRow(b,maxB)).join('')||'<div class="empty">이 달 매출이 없어요</div>'}
   </div>
+  ${(()=>{const rs=(D.returns||[]).filter(r=>r.date.slice(0,7)===MON);if(!rs.length)return '';const q=rs.reduce((a,r)=>a+r.returned,0),l=rs.reduce((a,r)=>a+r.lost,0);
+   return `<button class="card" style="display:block;width:100%;text-align:left;border:1.5px solid var(--stampbg)" onclick="document.querySelector('[data-tab=ret]').click()">
+   <h3>이번 달 회송 <span class="pill due">${rs.length}건</span></h3>
+   <div class="mini"><div>회송 수량<b class="num">${q.toLocaleString('ko-KR')}개</b></div><div>회송 카톤<b class="num">${rs.reduce((a,r)=>a+(r.cartons||0),0)}</b></div><div>놓친 매출<b class="num neg">${won(l)}</b></div></div>
+   ${rs.slice(0,3).map(r=>`<div class="sm" style="margin-top:8px;font-size:13px;color:var(--sub)"><b style="color:var(--ink)">${+r.date.slice(5,7)}/${+r.date.slice(8)}</b> ${esc(r.name)} — <span style="color:var(--stamp)">${esc(r.reason)}</span></div>`).join('')}
+   <div class="more" style="margin-top:8px;color:var(--green);font-weight:600;font-size:13px">회송 리스트 보기 ›</div></button>`})()}
   <div class="card"><h3>채널별</h3>
     <table class="t"><tr><th>채널</th><th>매출</th><th>마진</th><th>마진율</th></tr>
     ${ch.map(c=>`<tr><td>${esc(c.k)}</td><td>${won(c.salesT)}</td><td class="${c.margin<0?'neg':''}">${won(c.margin)}</td><td class="${c.margin<0?'neg':''}">${p1(pct(c.margin,c.salesT))}</td></tr>`).join('')}</table>
@@ -343,6 +352,30 @@ function dayDetail(k){
   <div class="mini"><div>마진<b class="num ${s.margin<0?'neg':''}">${won(s.margin)}</b></div><div>매입 원가<b class="num">${won(s.costT)}</b></div><div>EDI·물류<b class="num">${won(s.edi+s.logi)}</b></div></div>
   <table class="t" style="margin-top:12px"><tr><th>브랜드</th><th>매출</th><th>마진</th><th>마진율</th></tr>
   ${rs.slice().sort((a,b)=>b.salesT-a.salesT).map(r=>`<tr><td>${esc(r.brand)} <span class="muted" style="font-size:11px">${esc(r.center)}</span></td><td>${won(r.salesT)}</td><td class="${r.margin<0?'neg':''}">${won(r.margin)}</td><td>${p1(pct(r.margin,r.salesT))}</td></tr>`).join('')}</table>`);
+}
+
+
+/* ---------- 회송 ---------- */
+function ret(){
+  const all=D.returns||[];
+  const rs=all.filter(r=>r.date.slice(0,7)===MON);
+  const q=rs.reduce((a,r)=>a+r.returned,0),l=rs.reduce((a,r)=>a+r.lost,0);
+  const byR={};rs.forEach(r=>{const k=r.reason.replace(/\s*\(.*\)$/,'');byR[k]=(byR[k]||0)+1;});
+  return `${controls()}<div class="title" style="margin-top:12px">회송 리스트</div>
+  <div class="sub" style="font-size:13.5px">납품하려다 검수에서 돌려받은 품목 · 납품예정수량 − 실제 납품수량</div>
+  <div class="card hero alert"><div class="wm">회송</div>
+    <div style="font-size:13.5px;opacity:.85">${ml(MON)} 회송</div>
+    <div class="big num">${rs.length}<small>건</small> · ${q.toLocaleString('ko-KR')}<small>개</small></div>
+    <div class="kpi"><div>회송 카톤<b class="num">${rs.reduce((a,r)=>a+(r.cartons||0),0)}</b></div><div>놓친 매출 (부가세 포함)<b class="num">${won(l)}원</b></div></div>
+  </div>
+  ${Object.keys(byR).length?`<div class="card"><h3>사유별</h3>${Object.entries(byR).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="padding:6px 0"><span class="sp">${esc(k)}</span><b class="num">${v}건</b></div>`).join('')}</div>`:''}
+  <div class="card">${rs.map(r=>`<div class="br">
+    <div class="top"><b style="font-size:14.5px">${esc(r.name)}</b></div>
+    <div class="sm"><span>${+r.date.slice(5,7)}/${+r.date.slice(8)} (${WD[pd(r.date).getDay()]}) 입고</span><span>${esc(r.center)}</span><span>${esc(r.brand)}</span></div>
+    <div class="mini" style="margin-top:8px"><div>납품 시도<b class="num">${r.tried.toLocaleString('ko-KR')}</b></div><div>납품됨<b class="num">${r.delivered.toLocaleString('ko-KR')}</b></div><div>회송<b class="num neg">${r.returned.toLocaleString('ko-KR')}개 · ${r.cartons??'-'}카톤</b></div></div>
+    <div class="iss" style="margin-top:8px;background:var(--stampbg);color:var(--stamp);border-radius:10px;padding:8px 10px;font-size:13.5px"><b>사유</b> · ${esc(r.reason)}${r.memo?`<div style="color:var(--sub);font-size:12.5px;margin-top:2px">${esc(r.memo)}</div>`:''}</div>
+    <div class="muted" style="font-size:11.5px;margin-top:4px">놓친 매출 ${r.lost?won(r.lost)+'원':'단가 확인 전'} · 근거: ${esc(r.source||'올리브원 납품확인서')}</div></div>`).join('')||'<div class="empty">이 달 회송이 없어요</div>'}</div>
+  <div class="note">회송 수량은 올리브원 <b>납품예정수량 − 검수 확정 납품수량</b>이에요. 사유는 CJ 납품완료보고서에 검수자가 손으로 적은 내용을 옮긴 거라, "판독 어려움"이나 "추정"으로 표시된 건은 확인해 주세요.</div>`;
 }
 
 /* ---------- 시트 ---------- */

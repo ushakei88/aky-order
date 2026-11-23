@@ -46,3 +46,11 @@ git add inputs/r1 && git commit -m "납품확인서 수집 $(TZ=Asia/Seoul date 
 
 ## 4. 알림
 `납품수량`(검수 확정)이 처음으로 들어온 납품일이 있으면 "11.24(화) 납품분 실매출로 확정됐어요: 매출 ○○, 마진 ○○" 처럼 짧게 알린다.
+
+## 5. 회송 사유 (CJ 납품완료보고서)
+1. 회사 PC 폴더 `C:\Users\gkint\정산raw\★CJ 납품완료보고서` 에 새 PDF(파일명 앞 4자리 = 입고일 MMDD, 오프라인/온라인)가 있는지 본다(device_list_dir). 폴더 권한이 없으면 사용자에게 요청한다.
+2. 이번에 수집한 납품일 중 **회송(납품예정수량 > 납품수량, 검수 확정)** 이 있는 날의 PDF만 device_stage_files로 가져와 Read로 연다(스캔 이미지).
+3. 표에서 해당 품목 줄의 발주/입고 박스 수, 검수자가 손으로 쓴 사유(예: 내품상이, 입고경과일 미달, 빈공간 과다, 제조일자 미래 등)를 읽는다. 읽기 어려우면 `"reason": "사유 판독 어려움"` 으로 두고 memo에 보이는 글자를 적는다. 추측이면 사유 끝에 `(추정)`을 붙인다.
+4. `inputs/returns.json.enc` 를 `DASH_PW="$DASH_PW" python3 vault.py dec inputs/returns.json.enc /tmp/returns.json` 로 풀어, 같은 (date, center, code)가 없을 때만 항목을 추가한다:
+   `{"date":"YYYY-MM-DD","center":"LA02|LA04","code":"바코드","name":"상품명","boxes":회송박스,"qty":회송수량,"reason":"사유","memo":"메모","source":"MMDD 납품완료보고서(오프라인)"}`
+5. 다시 암호화해서(`vault.py enc /tmp/returns.json inputs/returns.json.enc`) 커밋·푸시한다. 회송이 새로 생기면 "11.24 회송 1건: ○○ 40개(1카톤) · 사유 ○○" 로 알린다.

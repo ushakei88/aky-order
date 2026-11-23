@@ -9,7 +9,11 @@
   GCP_SA_KEY=... DASH_PW=... python3 pnl/oy_sheet.py inputs/r1/*.json.enc [--dry]
 """
 import argparse, datetime as dt, glob, json, os, re, sys, tempfile
-import gspread.utils  # noqa: E402  (Actions에서만 필요)
+try:
+    import gspread  # noqa
+    import gspread.utils  # noqa
+except ImportError:  # 로컬 계산만 할 때
+    gspread = None
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
@@ -295,6 +299,16 @@ def write_month_tabs(sh, items):
             if b_ > a_:
                 reqs.append({"mergeCells": {"range": {"sheetId": sid, "startRowIndex": a_ - 1, "endRowIndex": b_, "startColumnIndex": 0, "endColumnIndex": 3},
                                             "mergeType": "MERGE_COLUMNS"}})
+        # 행 높이: 수기 데이터 줄에서 가장 많이 쓴 높이로 맞춘다
+        try:
+            meta = sh.fetch_sheet_metadata(params={"ranges": f"'{ws.title}'!A11:A{manual_last}", "fields": "sheets(data(rowMetadata(pixelSize)))"})
+            hs = [m.get("pixelSize") for m in meta["sheets"][0]["data"][0].get("rowMetadata", []) if m.get("pixelSize")]
+            if hs:
+                h = max(set(hs), key=hs.count)
+                reqs.append({"updateDimensionProperties": {"range": {"sheetId": sid, "dimension": "ROWS", "startIndex": start - 1, "endIndex": end},
+                                                           "properties": {"pixelSize": h}, "fields": "pixelSize"}})
+        except Exception as e:  # 높이를 못 읽어도 나머지는 진행
+            print("행 높이 읽기 실패:", e)
         sh.batch_update({"requests": reqs})
         # 합계(10행)·브랜드별 마진(6행) 범위를 마지막 줄까지 넓힌다
         top = ws.get("A6:AG10", value_render_option="FORMULA")

@@ -1,7 +1,7 @@
 name: 올영 손익 갱신 (시트 누적 + 대시보드)
 on:
   push:
-    paths: ["inputs/r1/**", "pnl/oy_sheet.py", "pnl/build_pnl.py", "pnl/parse_sheet.py"]
+    paths: ["inputs/r1/**", "inputs/returns.json.enc", "pnl/index.html", "pnl/oy_sheet.py", "pnl/build_pnl.py", "pnl/parse_sheet.py"]
   schedule:
     - cron: "10 12 * * *"   # 매일 21:10 (한국) — 시트를 손으로 고친 것도 대시보드에 반영
   workflow_dispatch:
