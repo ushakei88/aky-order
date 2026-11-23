@@ -67,7 +67,7 @@ def build_returns(pw, r1_glob=os.path.join(HERE, "inputs", "r1", "*.json.enc"), 
         p, v = price.get(o["code"], (0, 0.1))
         o["lost"] = round(o["returned"] * p * (1 + v))
         if o["kind"] == "미출고":
-            o["reason"] = r.get("reason") or fixed.get(o["code"]) or (f"전산 메모: {o['rmk']}" if o["rmk"] else "납품예정수량 0 입력 (재고 부족 등)")
+            o["reason"] = r.get("reason") or fixed.get(o["code"]) or "미출고"  # 올리브영 쪽 메모(결품대응 등)는 쓰지 않음
         else:
             o["reason"] = r.get("reason", "사유 확인 전")
         o["memo"] = r.get("memo", "")
