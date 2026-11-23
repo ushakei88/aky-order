@@ -542,6 +542,12 @@ def main():
         "items": items, "removed": removed, "history": hist[-30:],
         "brandMail": {r.get("브랜드"): r.get("발주메일") for r in master.values() if r.get("브랜드") and r.get("발주메일")},
     }
+    try:  # 회송 목록 (납품확인서 검수 확정 + CJ 납품완료보고서 사유)
+        from returns_build import build_returns
+        data["returns"] = build_returns(pw)
+    except Exception as e:
+        print("회송 목록 건너뜀:", e)
+        data["returns"] = (old or {}).get("returns", [])
     raw = json.dumps(data, ensure_ascii=False, default=str).encode()
 
     meta_path = os.path.join(a.out, "meta.json")

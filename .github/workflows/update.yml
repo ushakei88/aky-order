@@ -3,7 +3,7 @@ on:
   schedule:
     - cron: "40 0 * * *"     # 매일 09:40 (한국시간) — SCM 전일 마감 재고 메일(09:30경 도착)
   push:
-    paths: ["inputs/**.enc", "master.csv", "build.py"]
+    paths: ["inputs/**.enc", "inputs/r1/**", "master.csv", "build.py", "returns_build.py", "index.html"]
   workflow_dispatch:
 permissions:
   contents: write
