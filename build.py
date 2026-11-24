@@ -202,7 +202,21 @@ def read_stock_scm(wb):
                 out[code]["lots"].append({"exp": exp, "mfg": None, "qty": None})
                 out[code]["expref"] = True
                 nref += 1
-    meta = {"sheet": "올영", "qtyCol": "현재고", "rows": len(out), "oyExpLots": nlots, "refExpLots": nref}
+    # 향동(자체물류) 재고: '요약' 탭의 재고 > 향동자체물류 칸. 청담소녀처럼 향동 재고를 이관해 쓰는 브랜드용
+    hyang = {}
+    if "요약" in wb.sheetnames:
+        rs = list(wb["요약"].iter_rows(max_row=2000, values_only=True))
+        hi = next((i for i, r in enumerate(rs[:20]) if r and "품목명" in [str(c).strip() if c else "" for c in r]), None)
+        if hi is not None:
+            h = [str(c).strip() if c else "" for c in rs[hi]]
+            ci, ni = h.index("품목코드"), h.index("품목명")
+            qi = h.index("향동자체물류") if "향동자체물류" in h else None
+            if qi is not None:
+                for r in rs[hi + 1:]:
+                    if r and len(r) > qi and r[ni]:
+                        hyang[str(r[ni]).strip()] = {"qty": to_num(r[qi]) or 0, "icode": str(r[ci] or "")}
+    meta = {"sheet": "올영", "qtyCol": "현재고", "rows": len(out), "oyExpLots": nlots, "refExpLots": nref, "hyang": len(hyang)}
+    out["__hyang__"] = hyang
     return out, meta
 
 
@@ -296,6 +310,8 @@ def analyze(lines, stock, master, prev):
         qty = int(st["qty"]) if st else 0
 
         issues = []
+        if st and st.get("hyMissing"):
+            issues.append({"lv": "warn", "t": "향동 재고표(요약 탭)에서 이 품목을 못 찾았어요 — master.csv '향동품목코드' 칸에 품목코드를 적어 주세요"})
         lots = []
         eligible = None
         if delivery and days:
@@ -382,7 +398,7 @@ def analyze(lines, stock, master, prev):
                        "box": l["box"], "ea": l["ea"], "slip": l["slip"]} for l in ls],
             "online": sum(l["ea"] for l in ls if center_type(l["center"]) == "온라인"),
             "offline": sum(l["ea"] for l in ls if center_type(l["center"]) == "오프라인"),
-            "total": total, "boxes": boxes, "unit": unit, "stock": qty, "usable": usable,
+            "total": total, "boxes": boxes, "unit": unit, "stock": qty, "src": (st or {}).get("src", "올영"), "usable": usable,
             "after": after, "short": short, "cartons": cartons, "orderEA": cartons * unit,
             "days": days, "frac": frac, "lots": lots, "issues": issues, "memo": memo, "stop": stop,
             "status": status, "change": change, "prevTotal": p, "why": why,
@@ -421,8 +437,39 @@ def base_key(name):
     return re.sub(r"\s", "", n)
 
 
-def apply_bundles(items, stock, master):
-    """번들(예: 청담소녀 …*3)은 단품 × N 으로 환산해서 단품 재고와 함께 계산"""
+HYANGDONG_BRANDS = ("청담소녀",)  # 올영 재고가 아니라 향동 재고를 이관해서 쓰는 브랜드
+
+
+def apply_hyangdong(stock, master, lines):
+    hy = stock.pop("__hyang__", {}) or {}
+    if not hy:
+        return
+    by_key = {base_key(n): v for n, v in hy.items()}
+    by_icode = {v["icode"]: v for v in hy.values() if v.get("icode")}
+    cands = {}
+    for c, r in master.items():
+        cands[c] = r.get("상품명") or ""
+    for l in lines:
+        cands.setdefault(l["code"], l["name"])
+    for c, st in list(stock.items()):
+        cands.setdefault(c, st.get("name") or "")
+    for c, nm in cands.items():
+        if not any(b in nm for b in HYANGDONG_BRANDS) or "*" in nm:
+            continue  # 번들(*3 등)은 단품 재고로 계산
+        ic = (master.get(c) or {}).get("향동품목코드")
+        v = by_icode.get(ic) if ic else by_key.get(base_key(nm))
+        stock[c] = {"qty": (v or {}).get("qty", 0), "name": nm, "lots": (stock.get(c) or {}).get("lots", []), "unit": (stock.get(c) or {}).get("unit"),
+                    "expref": False, "src": "향동", "hyMissing": v is None}
+
+
+def links_of(master, items, stock):
+    """묶음 관계: 묶음/여러개입 상품코드 → (단품코드, 배수)
+    1) master.csv '단품코드'·'배수' 칸  2) 청담소녀 '…*3' 같은 이름 규칙"""
+    links = {}
+    for code, r in master.items():
+        b, k = code_str(r.get("단품코드")), to_num(r.get("배수"))
+        if b and k:
+            links[code] = (b, int(k))
     names = {}
     for code, st in stock.items():
         names.setdefault(base_key(st.get("name")), code)
@@ -432,33 +479,57 @@ def apply_bundles(items, stock, master):
     for it in items:
         if "*" not in it["name"]:
             names.setdefault(base_key(it["name"]), it["code"])
+    for it in items:
+        if it["code"] in links or not any(b in it["name"] for b in BUNDLE_BRANDS):
+            continue
+        m = re.search(r"\*\s*(\d+)", it["name"])
+        if m and names.get(base_key(it["name"])):
+            links[it["code"]] = (names[base_key(it["name"])], int(m.group(1)))
+    return links
+
+
+def apply_bundles(items, stock, master):
+    """묶음은 단품 기준으로 합쳐서 계산.
+    - 청담소녀 *3·*4: 단품을 묶어서 번들로 출고 → 번들 발주 × N 을 단품 재고에서 뺀다
+    - 요헤미티 7포 등: 7포를 뜯어 1포로도 출고 → 7포 재고 × 7 을 단품 재고로 친다
+    둘 다 '단품 수량'으로 바꾸면 같은 계산: 가능 = Σ재고×배수, 필요 = Σ발주×배수"""
+    links = links_of(master, items, stock)
+    rev = {}
+    for c, (b, k) in links.items():
+        rev.setdefault(b, []).append((c, k))
     groups = OrderedDict()
     for it in items:
-        it["mult"], it["base"] = 1, it["code"]
-        if any(b in it["name"] for b in BUNDLE_BRANDS):
-            m = re.search(r"\*\s*(\d+)", it["name"])
-            if m:
-                base = names.get(base_key(it["name"]))
-                if base:
-                    it["mult"], it["base"] = int(m.group(1)), base
-        groups.setdefault(it["base"], []).append(it)
+        b, k = links.get(it["code"], (it["code"], 1))
+        it["mult"], it["base"] = k, b
+        groups.setdefault(b, []).append(it)
     for base, mem in groups.items():
-        if len(mem) == 1 and mem[0]["mult"] == 1:
+        linked = rev.get(base, [])
+        if len(mem) == 1 and mem[0]["mult"] == 1 and not linked:
             continue
-        bst = stock.get(base, {})
-        avail = int(bst.get("qty", 0)) + sum(int(stock.get(m["code"], {}).get("qty", 0)) * m["mult"] for m in mem if m["code"] != base)
+        members = {base: 1, **{c: k for c, k in linked}}
+        parts, avail = [], 0
+        for c, k in members.items():
+            q = int(stock.get(c, {}).get("qty", 0))
+            avail += q * k
+            nm = (stock.get(c, {}).get("name") or (master.get(c) or {}).get("상품명") or next((m["name"] for m in mem if m["code"] == c), c))
+            if q:
+                parts.append(f"{short_name(nm)} {q:,}" + (f"×{k}" if k > 1 else ""))
         demand = sum(m["total"] * m["mult"] for m in mem)
         after = avail - demand
         short = max(0, -after)
         single = next((m for m in mem if m["code"] == base), None)
-        bname = (single or {}).get("name") or bst.get("name") or (master.get(base) or {}).get("상품명") or base
-        unit = int(to_num((master.get(base) or {}).get("입수량")) or (single or {}).get("unit") or bst.get("unit") or 1)
-        detail = " + ".join(f"{m['name'].split()[-1] if m['mult']>1 else '단품'} {m['total']}×{m['mult']}" for m in mem)
+        bname = (single or {}).get("name") or stock.get(base, {}).get("name") or (master.get(base) or {}).get("상품명") or base
+        unit = int(to_num((master.get(base) or {}).get("입수량")) or (single or {}).get("unit") or stock.get(base, {}).get("unit") or 1)
+        detail = " + ".join(f"{short_name(m['name'])} {m['total']}" + (f"×{m['mult']}" if m["mult"] > 1 else "") for m in mem)
+        src = stock.get(base, {}).get("src")
         rep = single or mem[0]
         for m in mem:
             m["after"] = after if m is rep else 0
             m["short"] = m["cartons"] = m["orderEA"] = 0
-            m["poolNote"] = f"단품 기준 계산: 필요 {demand:,}개 ({detail}) · 단품 재고 {avail:,}개"
+            m["stock"] = m["usable"] = avail      # 화면에는 단품 기준으로 쓸 수 있는 수량
+            m["src"] = src or "올영"
+            m["pooled"] = True
+            m["poolNote"] = f"단품 기준 계산: 필요 {demand:,}개 ({detail}) · 쓸 수 있는 단품 {avail:,}개 ({' + '.join(parts) or '재고 없음'}{', 향동 재고' if src == '향동' else ''})"
             m["issues"].insert(0, {"lv": "note", "t": m["poolNote"] + ("" if m is rep else f" → 발주는 '{bname}'에 합산")})
         st_need, ctn, why = need_rule(after, unit)
         for m in mem:
@@ -470,6 +541,11 @@ def apply_bundles(items, stock, master):
         rep["orderEA"] = rep["cartons"] * unit
         rep["unit"] = unit
         rep["orderName"], rep["orderCode"] = bname, base
+
+
+def short_name(n):
+    n = re.sub(r"\((온|역)\)", "", n or "").strip()
+    return n.split(" ", 1)[1] if " " in n else n
 
 
 prev_names = {}
@@ -515,6 +591,7 @@ def main():
     lines = read_orders(a.orders)
     stock, smeta = read_stock(a.stock) if a.stock else ({}, {"rows": 0})
     master = read_master(a.master)
+    apply_hyangdong(stock, master, lines)
 
     ds = [l["date"] for l in lines if l["date"]]
     delivery_guess = max(set(ds), key=ds.count) if ds else None
@@ -547,7 +624,8 @@ def main():
         base_label = old.get("baseLabel") or old.get("stockLabel")
         for i in items:
             o = ob.get(i["code"])
-            i["baseStock"] = o.get("baseStock", o.get("stock")) if o else i["stock"]
+            same_src = o and o.get("src", "올영") == i.get("src", "올영")  # 재고 기준(올영/향동)이 바뀌면 기준점도 새로
+            i["baseStock"] = o.get("baseStock", o.get("stock")) if same_src else i["stock"]
     else:
         for i in items:
             i["baseStock"] = i["stock"]
