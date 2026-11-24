@@ -311,7 +311,7 @@ def analyze(lines, stock, master, prev):
 
         issues = []
         if st and st.get("hyMissing"):
-            issues.append({"lv": "warn", "t": "향동 재고표(요약 탭)에서 이 품목을 못 찾았어요 — master.csv '향동품목코드' 칸에 품목코드를 적어 주세요"})
+            issues.append({"lv": "note", "t": "재고 메일(올영·향동) 어디에도 없는 품목이라 재고 0으로 계산했어요"})
         lots = []
         eligible = None
         if delivery and days:
@@ -458,6 +458,8 @@ def apply_hyangdong(stock, master, lines):
             continue  # 번들(*3 등)은 단품 재고로 계산
         ic = (master.get(c) or {}).get("향동품목코드")
         v = by_icode.get(ic) if ic else by_key.get(base_key(nm))
+        if v is None and c in stock:
+            continue  # 향동 재고표에 없는 별도 상품은 올영 재고 그대로
         stock[c] = {"qty": (v or {}).get("qty", 0), "name": nm, "lots": (stock.get(c) or {}).get("lots", []), "unit": (stock.get(c) or {}).get("unit"),
                     "expref": False, "src": "향동", "hyMissing": v is None}
 
