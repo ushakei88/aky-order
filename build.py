@@ -78,6 +78,10 @@ def pick(cells, *keys, exclude=()):
     return None
 
 
+# 브랜드 통째로 고정 상태 (새 SKU가 떠도 자동 적용)
+FIXED_BRANDS = {"GNC": "운영중지 (GNC 이관)"}
+
+
 def brand_of(name):
     n = re.sub(r"^\[[^\]]*\]\s*", "", name or "")
     return n.split()[0] if n.split() else ""
@@ -347,6 +351,8 @@ def analyze(lines, stock, master, prev):
         stop = any(k in memo for k in ("미운영", "발주중지", "미납"))
 
         fixed = str(ms.get("고정상태", "")).strip()
+        if not fixed and (ms.get("브랜드") or brand_of(name)) in FIXED_BRANDS:
+            fixed = FIXED_BRANDS[ms.get("브랜드") or brand_of(name)]
         st_need, cartons, why = need_rule(after, unit)
         if fixed:
             status, cartons, why = "end", 0, fixed
@@ -591,7 +597,7 @@ def main():
     s = defaultdict(int)
     for i in items:
         s[i["status"]] += 1
-    print(f"납품일 {data['delivery']} · {len(items)} SKU · 발주필요 {s['short']} · 재고없음 {s['nostock']} · 미리발주 {s['pre']} · 유통기한불가 {s['bad']} · 충분 {s['ok']} · 발주종료 {s['end']} · 총 {sum(i['cartons'] for i in items)}카톤")
+    print(f"납품일 {data['delivery']} · {len(items)} SKU · 발주필요 {s['short']} · 재고없음 {s['nostock']} · 미리발주 {s['pre']} · 유통기한불가 {s['bad']} · 충분 {s['ok']} · 운영중지 {s['end']} · 총 {sum(i['cartons'] for i in items)}카톤")
     print(f"변동: 신규 {sum(1 for i in changed if i['change']=='new')} · 수량변경 {sum(1 for i in changed if i['change']=='qty')} · 삭제 {len(removed)}")
     print("재고 파일:", smeta)
 

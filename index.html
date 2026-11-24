@@ -233,7 +233,7 @@ const pd=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
 const md=s=>{if(!s)return'-';const d=pd(s);return `${d.getMonth()+1}.${d.getDate()} (${WD[d.getDay()]})`};
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('on'),1800);}
 async function copy(t,msg){try{await navigator.clipboard.writeText(t)}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}toast(msg||'복사했어요');}
-const ST={short:['발주필요','due'],nostock:['재고 파일에 없음','due'],bad:['유통기한 불가','due'],pre:['미리 발주','amb'],tight:['미리 발주','amb'],ok:['충분','ok'],stop:['미납 처리','gray'],end:['발주종료','gray']};
+const ST={short:['발주필요','due'],nostock:['재고 파일에 없음','due'],bad:['유통기한 불가','due'],pre:['미리 발주','amb'],tight:['미리 발주','amb'],ok:['충분','ok'],stop:['미납 처리','gray'],end:['운영중지','gray']};
 const ORD=i=>i.cartons>0&&!['stop','end'].includes(i.status);
 const STS=['short','nostock','bad','pre','ok','stop','end'];
 const COLOR={short:'#C8402F',nostock:'#E08A7C',bad:'#7A4E86',pre:'#B7791F',tight:'#B7791F',ok:'#2F5D50',stop:'#B9AFA2',end:'#9C9285'};
@@ -444,7 +444,7 @@ function ret(){
     <div class="nums" style="grid-template-columns:repeat(3,1fr)">${rv?`<div>납품 시도<b>${n(r.tried)}</b></div><div>납품됨<b>${n(r.delivered)}</b></div><div class="neg">회송<b>${n(r.returned)}개 · ${r.cartons??'-'}카톤</b></div>`:`<div>발주<b>${n(r.po||r.tried)}</b></div><div>납품 시도<b>0</b></div><div class="neg">미출고<b>${n(r.returned)}개 · ${r.cartons??'-'}카톤</b></div>`}</div>
     <div class="iss ${rv?'bad':'warn'}"><b>사유</b> · ${esc(r.reason)}${r.memo?`<div style="color:var(--sub);font-size:12.5px;margin-top:2px">${esc(r.memo)}</div>`:''}</div>
     <div class="muted" style="font-size:11.5px;margin-top:4px">놓친 매출 ${r.lost?n(r.lost)+'원':'단가 확인 전'} · 근거: ${esc(r.source||'올리브원 납품확인서')}</div></div>`}).join('')||'<div class="empty">해당 내역이 없어요</div>'}</div>
-  <div class="note"><b>회송</b>은 올리브원 납품예정수량 − 검수 확정 납품수량이고, 사유는 CJ 납품완료보고서 검수자 수기 메모예요. <b>미출고</b>는 발주는 떴지만 납품예정수량을 0으로 넣은 품목이에요. 미출고는 우리 기준으로 "미출고"만 표시해요(발주종료로 정해둔 품목은 발주종료로 표시).</div>`;
+  <div class="note"><b>회송</b>은 올리브원 납품예정수량 − 검수 확정 납품수량이고, 사유는 CJ 납품완료보고서 검수자 수기 메모예요. <b>미출고</b>는 발주는 떴지만 납품예정수량을 0으로 넣은 품목이에요. 미출고는 우리 기준으로 "미출고"만 표시해요(운영중지로 정해둔 품목은 운영중지로 표시).</div>`;
 }
 
 /* ---------- 3PL 확인 요청서 ---------- */
