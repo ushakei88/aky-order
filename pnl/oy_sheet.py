@@ -4,6 +4,7 @@
 - 자동_품목  : 품목 한 줄씩 (작업시트와 같은 계산)
 - 자동_월집계: 월 탭과 같은 모양 (납품건 × 브랜드 × 센터)
 수량 기준: 납품수량(PDA 검수 확정, supQty) > 0 → 실매출 / 아니면 납품예정수량(supTobeQty) > 0 → 가매출 / 둘 다 없으면 넣지 않음
+매출(올영매출)이 0인 행은 품목·월집계·월 탭 어디에도 쓰지 않는다 (뒤 수식 오류 방지)
 
 사용 (깃허브 Actions):
   GCP_SA_KEY=... DASH_PW=... python3 pnl/oy_sheet.py inputs/r1/*.json.enc [--dry]
@@ -89,6 +90,8 @@ def calc(r1, law):
         price = num(g.get("costUprc"))
         vat = 0.0 if g.get("vatSpCd") == "M" else (num(g.get("vatRt")) / 100 if g.get("vatRt") not in (None, "") else 0.1)  # M = 면세
         sales = price * qty
+        if sales <= 0:
+            continue  # 매출 0 행은 넣지 않음
         cost_u = law.get(c)
         note = ""
         if cost_u is None:
@@ -119,6 +122,8 @@ def summarize(items):
         g["edi"] += it["EDI"]; g["logi"] += it["물류비"]
     out = []
     for (po, inb, brand, center), g in sorted(grp.items(), key=lambda x: (x[0][1], x[0][0], x[0][2], x[0][3])):
+        if g["sales"] <= 0:
+            continue  # 매출 0 행은 빼기
         costT, salesT = g["cost"] + g["costV"], g["sales"] + g["salesV"]
         ediT, logiT = g["edi"] * 1.1, g["logi"] * 1.1
         margin = salesT - costT - ediT - logiT
@@ -161,7 +166,8 @@ def write_item_tab(sh, items):
     rnd = lambda v: round(v) if isinstance(v, float) and abs(v) >= 1 else (round(v, 4) if isinstance(v, float) else v)
     ws = ensure_tab(sh, TAB_ITEM, ITEM_HEAD, 1)
     old = ws.get_all_values()
-    keep = [r for r in old[1:] if r and r[2] and r[2] not in {i["입고일"] for i in items}]
+    keep = [r for r in old[1:] if r and r[2] and r[2] not in {i["입고일"] for i in items}
+            and num(str(r[14] if len(r) > 14 else 0).replace(",", "")) > 0]  # 매출 0 행 빼기
     body = keep + [[rnd(it[h]) for h in ITEM_HEAD] for it in items]
     body.sort(key=lambda r: (str(r[2]), str(r[3]), str(r[8]), str(r[7])))
     ws.clear()
@@ -173,7 +179,8 @@ def write_tabs(sh, items, sums, missing):
     rnd = lambda v: round(v) if isinstance(v, float) and abs(v) >= 1 else (round(v, 4) if isinstance(v, float) else v)
     ws = ensure_tab(sh, TAB_ITEM, ITEM_HEAD, 1)
     old = ws.get_all_values()
-    keep = [r for r in old[1:] if r and r[2] and r[2] not in {i["입고일"] for i in items}]  # 이번에 다시 계산한 입고일은 새로 씀
+    keep = [r for r in old[1:] if r and r[2] and r[2] not in {i["입고일"] for i in items}
+            and num(str(r[14] if len(r) > 14 else 0).replace(",", "")) > 0]  # 매출 0 행 빼기  # 이번에 다시 계산한 입고일은 새로 씀
     body = keep + [[rnd(it[h]) for h in ITEM_HEAD] for it in items]
     body.sort(key=lambda r: (r[2], r[3], r[8], r[7]))
     ws.clear()
@@ -258,7 +265,7 @@ def write_month_tabs(sh, items):
             g = groups.setdefault(k, {"cost": 0.0, "sales": 0.0, "prov": False})
             g["cost"] += num(it["매입금액(공급가)"]); g["sales"] += num(it["올영매출(공급가)"])
             g["prov"] |= it["상태"] == "가매출"
-        keys = sorted(groups, key=lambda k: (k[1], k[0], k[2], k[3]))
+        keys = sorted((k for k in groups if groups[k]["sales"] > 0), key=lambda k: (k[1], k[0], k[2], k[3]))  # 매출 0 행 빼기
         n = len(keys)
         if not n:
             continue
