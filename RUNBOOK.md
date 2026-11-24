@@ -41,8 +41,10 @@ DASH_PW="$DASH_PW" python3 vault.py dec inputs/stock.xlsx.enc /tmp/stock.xlsx
 DASH_PW="$DASH_PW" python3 -W ignore build.py --orders ../orders.json --stock /tmp/stock.xlsx --stock-label "$(cat inputs/stock.label)" --out .
 git add -A && git commit -m "발주 확인 $(TZ=Asia/Seoul date '+%m-%d %H:%M')" && git push
 ```
-3. build.py가 출력한 "변동: 신규 · 수량변경 · 삭제" 줄을 본다.
+3. push가 거절되면(다른 자동 작업이 먼저 올림) `git fetch && git reset --hard origin/main` 후 위 명령을 처음부터 다시 실행한다.
+4. build.py가 출력한 "변동: 신규 · 수량변경 · 삭제" 줄을 본다.
 
 ## 4. 알림 (모든 보고는 한글로 쉽게)
 - 처음 확인이거나 변동(신규/수량변경/삭제)이 1건 이상이면 PushNotification으로 짧게 알린다: "11.24(화) 납품분: 부족 ○품목 ○카톤, 변동 ○건 — https://ushakei88.github.io/aky-order/"
 - 변동이 없으면 알리지 않는다.
+- GNC 브랜드는 전부 운영중지(이관) — build.py가 자동으로 운영중지로 표시하고 카톤 계산에서 뺀다.
